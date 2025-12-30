@@ -262,7 +262,7 @@ impl Render for Startup {
                                 )
                             })
                             .when(!self.loading, |this| {
-                                let avatar = profile.avatar(true);
+                                let avatar = profile.avatar();
                                 let name = profile.display_name();
 
                                 this.child(

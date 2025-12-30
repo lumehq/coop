@@ -9,7 +9,6 @@ use gpui::{
 use gpui_tokio::Tokio;
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
-use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::client;
 use theme::ActiveTheme;
@@ -204,7 +203,7 @@ impl Screening {
                                         .hover(|this| {
                                             this.bg(cx.theme().elevated_surface_background)
                                         })
-                                        .child(Avatar::new(contact.avatar(true)).size(rems(1.75)))
+                                        .child(Avatar::new(contact.avatar()).size(rems(1.75)))
                                         .child(contact.display_name()),
                                 );
                             }
@@ -221,7 +220,6 @@ impl Screening {
 
 impl Render for Screening {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let shorten_pubkey = shorten_pubkey(self.profile.public_key(), 8);
         let total_mutuals = self.mutual_contacts.len();
         let last_active = self.last_active.map(|_| true);
@@ -234,7 +232,7 @@ impl Render for Screening {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(self.profile.avatar(proxy)).size(rems(4.)))
+                    .child(Avatar::new(self.profile.avatar()).size(rems(4.)))
                     .child(
                         div()
                             .font_semibold()

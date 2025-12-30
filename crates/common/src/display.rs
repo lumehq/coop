@@ -12,31 +12,19 @@ const SECONDS_IN_MINUTE: i64 = 60;
 const MINUTES_IN_HOUR: i64 = 60;
 const HOURS_IN_DAY: i64 = 24;
 const DAYS_IN_MONTH: i64 = 30;
-const FALLBACK_IMG: &str = "https://image.nostr.build/c30703b48f511c293a9003be8100cdad37b8798b77a1dc3ec6eb8a20443d5dea.png";
-const IMAGE_RESIZE_SERVICE: &str = "https://wsrv.nl";
 
 pub trait RenderedProfile {
-    fn avatar(&self, proxy: bool) -> SharedString;
+    fn avatar(&self) -> SharedString;
     fn display_name(&self) -> SharedString;
 }
 
 impl RenderedProfile for Profile {
-    fn avatar(&self, proxy: bool) -> SharedString {
+    fn avatar(&self) -> SharedString {
         self.metadata()
             .picture
             .as_ref()
             .filter(|picture| !picture.is_empty())
-            .map(|picture| {
-                if proxy {
-                    let url = format!(
-                        "{IMAGE_RESIZE_SERVICE}/?url={picture}&w=100&h=100&fit=cover&mask=circle&default={FALLBACK_IMG}&n=-1"
-                    );
-
-                    url.into()
-                } else {
-                    picture.into()
-                }
-            })
+            .map(|picture| picture.into())
             .unwrap_or_else(|| "brand/avatar.png".into())
     }
 

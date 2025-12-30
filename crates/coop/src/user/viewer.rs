@@ -9,7 +9,6 @@ use gpui::{
 use gpui_tokio::Tokio;
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
-use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::client;
 use theme::ActiveTheme;
@@ -132,7 +131,6 @@ impl ProfileViewer {
 
 impl Render for ProfileViewer {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let bech32 = shorten_pubkey(self.profile.public_key(), 16);
         let shared_bech32 = SharedString::from(bech32);
 
@@ -145,7 +143,7 @@ impl Render for ProfileViewer {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(self.profile.avatar(proxy)).size(rems(4.)))
+                    .child(Avatar::new(self.profile.avatar()).size(rems(4.)))
                     .child(
                         v_flex()
                             .child(

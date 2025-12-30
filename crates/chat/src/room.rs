@@ -201,9 +201,9 @@ impl Room {
     }
 
     /// Gets the display image for the room
-    pub fn display_image(&self, proxy: bool, cx: &App) -> SharedString {
+    pub fn display_image(&self, cx: &App) -> SharedString {
         if !self.is_group() {
-            self.display_member(cx).avatar(proxy)
+            self.display_member(cx).avatar()
         } else {
             SharedString::from("brand/group.png")
         }

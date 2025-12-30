@@ -15,7 +15,6 @@ use key_store::{Credential, KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use person::PersonRegistry;
 use relay_auth::RelayAuth;
-use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode, ThemeRegistry};
 use title_bar::TitleBar;
@@ -33,7 +32,7 @@ use crate::actions::{
 };
 use crate::user::viewer;
 use crate::views::compose::compose_button;
-use crate::views::{onboarding, preferences, setup_relay, startup, welcome};
+use crate::views::{onboarding, setup_relay, startup, welcome};
 use crate::{login, new_identity, sidebar, user};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -220,17 +219,6 @@ impl ChatSpace {
             this.set_center(center, window, cx);
         });
         self.ready = true;
-    }
-
-    fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
-        let view = preferences::init(window, cx);
-
-        window.open_modal(cx, move |modal, _window, _cx| {
-            modal
-                .title(SharedString::from("Preferences"))
-                .width(px(520.))
-                .child(view.clone())
-        });
     }
 
     fn on_profile(&mut self, _ev: &ViewProfile, window: &mut Window, cx: &mut Context<Self>) {
@@ -475,7 +463,6 @@ impl ChatSpace {
     }
 
     fn titlebar_right(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let auto_update = AutoUpdater::global(cx);
         let account = Account::global(cx);
         let relay_auth = RelayAuth::global(cx);
@@ -561,7 +548,7 @@ impl ChatSpace {
                         .reverse()
                         .transparent()
                         .icon(IconName::CaretDown)
-                        .child(Avatar::new(profile.avatar(proxy)).size(rems(1.45)))
+                        .child(Avatar::new(profile.avatar()).size(rems(1.45)))
                         .popup_menu(move |this, _window, _cx| {
                             this.label(profile.display_name())
                                 .menu_with_icon(
@@ -651,7 +638,6 @@ impl Render for ChatSpace {
 
         div()
             .id(SharedString::from("chatspace"))
-            .on_action(cx.listener(Self::on_settings))
             .on_action(cx.listener(Self::on_profile))
             .on_action(cx.listener(Self::on_relays))
             .on_action(cx.listener(Self::on_dark_mode))

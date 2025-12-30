@@ -86,8 +86,9 @@ impl RoomListItem {
 
 impl RenderOnce for RoomListItem {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let hide_avatar = AppSettings::get_hide_user_avatars(cx);
-        let require_screening = AppSettings::get_screening(cx);
+        let settings = AppSettings::settings(cx);
+        let hide_avatar = settings.hide_avatar;
+        let require_screening = settings.screening.is_everyone();
 
         let (
             Some(public_key),

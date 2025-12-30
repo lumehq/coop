@@ -205,7 +205,10 @@ impl NewAccount {
         self.uploading(true, cx);
 
         // Get the user's configured NIP96 server
-        let nip96_server = AppSettings::get_media_server(cx);
+        let file_server = {
+            let settings = AppSettings::settings(cx);
+            settings.file_server.clone()
+        };
 
         // Open native file dialog
         let paths = cx.prompt_for_paths(PathPromptOptions {
@@ -221,7 +224,7 @@ impl NewAccount {
                     if let Some(path) = paths.pop() {
                         let file = fs::read(path).await?;
                         let client = client();
-                        let url = nip96_upload(client, &nip96_server, file).await?;
+                        let url = nip96_upload(client, &file_server, file).await?;
 
                         Ok(url)
                     } else {

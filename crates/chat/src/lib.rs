@@ -12,7 +12,6 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
-use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::{client, event_store, GIFTWRAP_SUBSCRIPTION};
 
@@ -372,7 +371,7 @@ impl ChatRegistry {
     }
 
     /// A task to load rooms from the database
-    async fn __get_rooms(allow_contact: bool) -> Result<HashSet<Room>, Error> {
+    async fn __get_rooms() -> Result<HashSet<Room>, Error> {
         let client = client();
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
@@ -427,15 +426,11 @@ impl ChatRegistry {
             let user_sent = messages.iter().any(|m| m.pubkey == public_key);
 
             // Determine if the room is ongoing or not
-            let mut bypassed = false;
-
-            // Check if public keys are from the user's contacts
-            if allow_contact {
-                bypassed = public_keys.iter().any(|k| contacts.contains(k));
-            }
+            // public keys that are in the user's contacts will be bypassed.
+            let is_contact = public_keys.iter().any(|k| contacts.contains(k));
 
             // Set the room's kind based on status
-            if user_sent || bypassed {
+            if user_sent || is_contact {
                 room = room.kind(RoomKind::Ongoing);
             }
 
@@ -447,12 +442,13 @@ impl ChatRegistry {
 
     /// Load all rooms from the database.
     pub fn get_rooms(&mut self, cx: &mut Context<Self>) {
-        let allow_contact = AppSettings::get_contact_bypass(cx);
+        let task: Task<Result<HashSet<Room>, Error>> =
+            cx.background_spawn(async move { Self::__get_rooms().await });
 
         self._tasks.push(
             // Run and finished in the background
             cx.spawn(async move |this, cx| {
-                match Self::__get_rooms(allow_contact).await {
+                match task.await {
                     Ok(rooms) => {
                         this.update(cx, move |this, cx| {
                             this.extend_rooms(rooms, cx);

@@ -479,7 +479,10 @@ impl ChatPanel {
     /// Upload a file from the user's device
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Get the user's configured NIP96 server
-        let nip96_server = AppSettings::get_media_server(cx);
+        let file_server = {
+            let settings = AppSettings::settings(cx);
+            settings.file_server.clone()
+        };
 
         let path = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -495,7 +498,7 @@ impl ChatPanel {
             let upload = Tokio::spawn(cx, async move {
                 let file = fs::read(path).await.ok()?;
                 let client = client();
-                let url = nip96_upload(client, &nip96_server, file).await.ok()?;
+                let url = nip96_upload(client, &file_server, file).await.ok()?;
 
                 Some(url)
             });
@@ -653,9 +656,6 @@ impl ChatPanel {
         text: AnyElement,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let hide_avatar = AppSettings::get_hide_user_avatars(cx);
-
         let id = message.id;
         let author = self.profile(&message.author, cx);
         let public_key = author.public_key();
@@ -668,6 +668,12 @@ impl ChatPanel {
 
         // Check if message is sent successfully
         let is_sent_success = self.is_sent_success(&id);
+
+        // Get the hide avatar setting
+        let hide_avatar = {
+            let settings = AppSettings::settings(cx);
+            settings.hide_avatar
+        };
 
         div()
             .id(ix)
@@ -684,7 +690,7 @@ impl ChatPanel {
                         this.child(
                             div()
                                 .id(SharedString::from(format!("{ix}-avatar")))
-                                .child(Avatar::new(author.avatar(proxy)).size(rems(2.)))
+                                .child(Avatar::new(author.avatar()).size(rems(2.)))
                                 .context_menu(move |this, _window, _cx| {
                                     let view = Box::new(OpenPublicKey(public_key));
                                     let copy = Box::new(CopyPublicKey(public_key));
@@ -870,7 +876,7 @@ impl ChatPanel {
                         h_flex()
                             .gap_1()
                             .font_semibold()
-                            .child(Avatar::new(profile.avatar(true)).size(rems(1.25)))
+                            .child(Avatar::new(profile.avatar()).size(rems(1.25)))
                             .child(profile.display_name()),
                     ),
             )
@@ -1257,9 +1263,8 @@ impl Panel for ChatPanel {
 
     fn title(&self, cx: &App) -> AnyElement {
         self.room.read_with(cx, |this, cx| {
-            let proxy = AppSettings::get_proxy_user_avatars(cx);
             let label = this.display_name(cx);
-            let url = this.display_image(proxy, cx);
+            let url = this.display_image(cx);
 
             h_flex()
                 .gap_1p5()

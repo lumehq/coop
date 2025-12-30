@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -59,7 +59,7 @@ pub struct RelayAuth {
     _subscriptions: SmallVec<[Subscription; 1]>,
 
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 1]>,
+    _tasks: SmallVec<[Task<()>; 2]>,
 }
 
 impl RelayAuth {
@@ -85,19 +85,24 @@ impl RelayAuth {
 
         subscriptions.push(
             // Observe the current state
-            cx.observe_in(&entity, window, |this, _, window, cx| {
-                let settings = AppSettings::global(cx);
-                let auto_auth = AppSettings::get_auto_auth(cx);
+            cx.observe_in(&entity, window, |this, _state, window, cx| {
+                let autoauth = {
+                    let settings = AppSettings::settings(cx);
+                    settings.authentication.is_auto()
+                };
 
                 for req in this.requests.clone().into_iter() {
-                    let is_authenticated = settings.read(cx).is_authenticated(&req.url);
+                    let trusted_relay = {
+                        let settings = AppSettings::settings(cx);
+                        settings.is_trusted_relay(&req.url)
+                    };
 
-                    if auto_auth && is_authenticated {
+                    if autoauth && trusted_relay {
                         // Automatically authenticate if the relay is authenticated before
-                        this.response(req.to_owned(), window, cx);
+                        this.response(&req, window, cx);
                     } else {
                         // Otherwise open the auth request popup
-                        this.ask_for_approval(req.to_owned(), window, cx);
+                        this.ask_for_approval(&req, window, cx);
                     }
                 }
             }),
@@ -131,8 +136,7 @@ impl RelayAuth {
             cx.spawn(async move |this, cx| {
                 while let Ok(request) = rx.recv_async().await {
                     this.update(cx, |this, cx| {
-                        this.requests.insert(request);
-                        cx.notify();
+                        this.add_request(request, cx);
                     })
                     .ok();
                 }
@@ -146,6 +150,12 @@ impl RelayAuth {
         }
     }
 
+    /// Add a new authentication request.
+    fn add_request(&mut self, request: AuthRequest, cx: &mut Context<Self>) {
+        self.requests.insert(request);
+        cx.notify();
+    }
+
     /// Get the number of pending requests.
     pub fn pending_requests(&self, _cx: &App) -> usize {
         self.requests.len()
@@ -153,14 +163,14 @@ impl RelayAuth {
 
     /// Reask for approval for all pending requests.
     pub fn re_ask(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for request in self.requests.clone().into_iter() {
+        for request in self.requests.clone().iter() {
             self.ask_for_approval(request, window, cx);
         }
     }
 
     /// Respond to an authentication request.
-    fn response(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
-        let settings = AppSettings::global(cx);
+    fn response(&mut self, req: &AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
+        let req = req.to_owned();
 
         let challenge = req.challenge.to_owned();
         let url = req.url.to_owned();
@@ -195,39 +205,46 @@ impl RelayAuth {
                     RelayNotification::Message {
                         message: RelayMessage::Ok { event_id, .. },
                     } => {
-                        if id == event_id {
-                            // Re-subscribe to previous subscription
-                            relay.resubscribe().await?;
+                        if id != event_id {
+                            continue;
+                        };
 
-                            // Get all failed events that need to be resent
-                            let mut event_store = event_store().write().await;
+                        // Re-subscribe to previous subscription
+                        relay.resubscribe().await?;
 
-                            let ids: Vec<EventId> = event_store
+                        // Get all failed events that need to be resent
+                        let events_to_resend: Vec<(EventId, RelayUrl)> = {
+                            let event_store = event_store().write().await;
+                            event_store
                                 .resend_queue
                                 .iter()
                                 .filter(|(_, url)| relay_url == *url)
-                                .map(|(id, _)| *id)
-                                .collect();
+                                .map(|(id, url)| (*id, url.clone()))
+                                .collect()
+                        };
 
-                            for id in ids.into_iter() {
-                                if let Some(relay_url) = event_store.resend_queue.remove(&id) {
-                                    if let Some(event) = client.database().event_by_id(&id).await? {
-                                        let event_id = relay.send_event(&event).await?;
+                        let mut results = Vec::new();
 
-                                        let output = Output {
-                                            val: event_id,
-                                            failed: HashMap::new(),
-                                            success: HashSet::from([relay_url]),
-                                        };
-
-                                        event_store.sent_ids.insert(event_id);
-                                        event_store.resent_ids.push(output);
-                                    }
-                                }
+                        // Process to resend events
+                        for (id, relay_url) in events_to_resend.into_iter() {
+                            if let Some(event) = client.database().event_by_id(&id).await? {
+                                let event_id = relay.send_event(&event).await?;
+                                let mut output = Output::new(event_id);
+                                output.success.insert(relay_url);
+                                results.push((event_id, output));
                             }
-
-                            return Ok(());
                         }
+
+                        // Update event store
+                        {
+                            let mut event_store = event_store().write().await;
+                            for (event_id, output) in results {
+                                event_store.sent_ids.insert(event_id);
+                                event_store.resent_ids.push(output);
+                            }
+                        }
+
+                        return Ok(());
                     }
                     RelayNotification::AuthenticationFailed => break,
                     RelayNotification::Shutdown => break,
@@ -251,8 +268,9 @@ impl RelayAuth {
                             window.push_notification(format!("{url} has been authenticated"), cx);
 
                             // Save the authenticated relay to automatically authenticate future requests
-                            settings.update(cx, |this, cx| {
-                                this.push_relay(&url, cx);
+                            AppSettings::global(cx).update(cx, |this, cx| {
+                                this.settings.trusted_relays.insert(url);
+                                cx.notify();
                             });
 
                             // Remove the challenge from the list of pending authentications
@@ -273,8 +291,9 @@ impl RelayAuth {
     }
 
     /// Push a popup to approve the authentication request.
-    fn ask_for_approval(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
-        let url = SharedString::from(req.url.clone().to_string());
+    fn ask_for_approval(&mut self, req: &AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
+        let req = req.clone();
+        let url = SharedString::from(req.url.to_string());
         let entity = cx.entity().downgrade();
         let loading = Rc::new(Cell::new(false));
 
@@ -301,9 +320,6 @@ impl RelayAuth {
                     .into_any_element()
             })
             .action(move |_window, _cx| {
-                let entity = entity.clone();
-                let req = req.clone();
-
                 Button::new("approve")
                     .label("Approve")
                     .small()
@@ -311,26 +327,25 @@ impl RelayAuth {
                     .loading(loading.get())
                     .disabled(loading.get())
                     .on_click({
+                        let entity = entity.clone();
+                        let req = req.clone();
                         let loading = Rc::clone(&loading);
+
                         move |_ev, window, cx| {
                             // Set loading state to true
                             loading.set(true);
+
                             // Process to approve the request
                             entity
                                 .update(cx, |this, cx| {
-                                    this.response(req.clone(), window, cx);
+                                    this.response(&req, window, cx);
                                 })
-                                .expect("Entity has been released");
+                                .ok();
                         }
                     })
             });
 
         // Push the notification to the current window
         window.push_notification(note, cx);
-
-        // Focus the window if it's not active
-        if !window.is_window_hovered() {
-            window.activate_window();
-        }
     }
 }

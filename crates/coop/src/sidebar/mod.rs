@@ -14,7 +14,6 @@ use gpui::{
 use gpui_tokio::Tokio;
 use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
-use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::{client, GIFTWRAP_SUBSCRIPTION};
 use theme::ActiveTheme;
@@ -534,7 +533,6 @@ impl Sidebar {
         range: Range<usize>,
         cx: &Context<Self>,
     ) -> Vec<impl IntoElement> {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let mut items = Vec::with_capacity(range.end - range.start);
 
         for ix in range {
@@ -557,7 +555,7 @@ impl Sidebar {
                 RoomListItem::new(ix)
                     .room_id(room_id)
                     .name(this.display_name(cx))
-                    .avatar(this.display_image(proxy, cx))
+                    .avatar(this.display_image(cx))
                     .public_key(member.public_key())
                     .kind(this.kind)
                     .created_at(this.created_at.to_ago())
