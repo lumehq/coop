@@ -9,8 +9,6 @@ common = { path = "../common" }
 theme = { path = "../theme" }
 ui = { path = "../ui" }
 
-rust-i18n.workspace = true
-i18n.workspace = true
 nostr-sdk.workspace = true
 gpui.workspace = true
 smol.workspace = true

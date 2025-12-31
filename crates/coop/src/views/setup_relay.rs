@@ -8,7 +8,6 @@ use gpui::{
     ParentElement, Render, SharedString, Styled, Subscription, Task, TextAlign, UniformList,
     Window,
 };
-use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
@@ -149,7 +148,11 @@ impl SetupRelay {
 
     pub fn set_relays(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.relays.is_empty() {
-            self.set_error(t!("relays.empty"), window, cx);
+            self.set_error(
+                "You need to add at least 1 relay to receive messages from others.",
+                window,
+                cx,
+            );
             return;
         };
 
@@ -272,7 +275,7 @@ impl SetupRelay {
             .justify_center()
             .text_sm()
             .text_align(TextAlign::Center)
-            .child(shared_t!("relays.help_text"))
+            .child(SharedString::from("Please add some relays."))
     }
 }
 
@@ -284,7 +287,7 @@ impl Render for SetupRelay {
             .child(
                 div()
                     .text_color(cx.theme().text_muted)
-                    .child(shared_t!("relays.description")),
+                    .child(SharedString::from("In order to receive messages from others, you need to set up at least one Messaging Relay.")),
             )
             .child(
                 v_flex()
@@ -297,7 +300,7 @@ impl Render for SetupRelay {
                             .child(
                                 Button::new("add")
                                     .icon(IconName::PlusFill)
-                                    .label(t!("common.add"))
+                                    .label("Add")
                                     .ghost()
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.add(window, cx);

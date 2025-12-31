@@ -13,7 +13,6 @@ use gpui::{
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
-use i18n::{shared_t, t};
 use key_store::{Credential, KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use person::PersonRegistry;
@@ -230,7 +229,7 @@ impl ChatSpace {
 
         window.open_modal(cx, move |modal, _window, _cx| {
             modal
-                .title(shared_t!("common.preferences"))
+                .title(SharedString::from("Preferences"))
                 .width(px(520.))
                 .child(view.clone())
         });
@@ -291,9 +290,9 @@ impl ChatSpace {
             let entity = entity.clone();
 
             this.confirm()
-                .title(shared_t!("relays.modal"))
+                .title(SharedString::from("Set Up Messaging Relays"))
                 .child(view.clone())
-                .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
+                .button_props(ModalButtonProps::default().ok_text("Update"))
                 .on_ok(move |_, window, cx| {
                     entity
                         .update(cx, |this, cx| {
@@ -397,21 +396,21 @@ impl ChatSpace {
     fn on_copy_pubkey(&mut self, ev: &CopyPublicKey, window: &mut Window, cx: &mut Context<Self>) {
         let Ok(bech32) = ev.0.to_bech32();
         cx.write_to_clipboard(ClipboardItem::new_string(bech32));
-        window.push_notification(t!("common.copied"), cx);
+        window.push_notification("Copied", cx);
     }
 
     fn on_keyring(&mut self, _ev: &KeyringPopup, window: &mut Window, cx: &mut Context<Self>) {
         window.open_modal(cx, move |this, _window, _cx| {
             this.show_close(true)
-                .title(shared_t!("keyring_disable.label"))
+                .title(SharedString::from("Keyring is disabled"))
                 .child(
                     v_flex()
                         .gap_2()
                         .pb_4()
                         .text_sm()
-                        .child(shared_t!("keyring_disable.body_1"))
-                        .child(shared_t!("keyring_disable.body_2"))
-                        .child(shared_t!("keyring_disable.body_3")),
+                        .child(SharedString::from("Coop cannot access the Keyring Service on your system. By design, Coop uses Keyring to store your credentials."))
+                        .child(SharedString::from("Without access to Keyring, Coop will store your credentials as plain text."))
+                        .child(SharedString::from("If you want to store your credentials in the Keyring, please enable Keyring and allow Coop to access it.")),
                 )
         });
     }
@@ -470,7 +469,9 @@ impl ChatSpace {
                         .text_xs()
                         .rounded_full()
                         .bg(cx.theme().surface_background)
-                        .child(shared_t!("loading.label")),
+                        .child(SharedString::from(
+                            "Getting messages. This may take a while...",
+                        )),
                 ))
             })
     }
@@ -530,7 +531,10 @@ impl ChatSpace {
                         .text_color(cx.theme().warning_foreground)
                         .hover(|this| this.bg(cx.theme().warning_hover))
                         .active(|this| this.bg(cx.theme().warning_active))
-                        .child(shared_t!("auth.requests", u = pending_requests))
+                        .child(SharedString::from(format!(
+                            "You have {} pending authentication requests",
+                            pending_requests
+                        )))
                         .on_click(move |_ev, window, cx| {
                             relay_auth.update(cx, |this, cx| {
                                 this.re_ask(window, cx);
