@@ -8,7 +8,6 @@ use gpui::{
     RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
     Window,
 };
-use i18n::{shared_t, t};
 use key_store::{Credential, KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use person::PersonRegistry;
@@ -147,7 +146,10 @@ impl Startup {
                         )
                     }
                     Ok(None) => {
-                        window.push_notification(t!("login.keyring_required"), cx);
+                        window.push_notification(
+                            "You must allow Coop access to the keyring to continue.",
+                            cx,
+                        );
                         this.set_loading(false, cx);
                     }
                     Err(e) => {
@@ -231,12 +233,14 @@ impl Render for Startup {
                                     .text_xl()
                                     .font_semibold()
                                     .line_height(relative(1.3))
-                                    .child(shared_t!("welcome.title")),
+                                    .child(SharedString::from("Welcome to Coop")),
                             )
                             .child(
                                 div()
                                     .text_color(cx.theme().text_muted)
-                                    .child(shared_t!("welcome.subtitle")),
+                                    .child(SharedString::from(
+                                        "Chat Freely, Stay Private on Nostr.",
+                                    )),
                             ),
                     ),
             )
@@ -305,14 +309,11 @@ impl Render for Startup {
                                 this.login(window, cx);
                             })),
                     )
-                    .child(
-                        Button::new("logout")
-                            .label(t!("user.sign_out"))
-                            .ghost()
-                            .on_click(|_, _window, cx| {
-                                reset(cx);
-                            }),
-                    ),
+                    .child(Button::new("logout").label("Sign out").ghost().on_click(
+                        |_, _window, cx| {
+                            reset(cx);
+                        },
+                    )),
             )
     }
 }

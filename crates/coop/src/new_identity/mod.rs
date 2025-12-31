@@ -6,7 +6,6 @@ use gpui::{
     Window,
 };
 use gpui_tokio::Tokio;
-use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
@@ -68,11 +67,11 @@ impl NewAccount {
 
             modal
                 .alert()
-                .title(shared_t!("new_account.backup_label"))
+                .title(SharedString::from(
+                    "Backup to avoid losing access to your account",
+                ))
                 .child(view.clone())
-                .button_props(
-                    ModalButtonProps::default().ok_text(t!("new_account.backup_download")),
-                )
+                .button_props(ModalButtonProps::default().ok_text("Download"))
                 .on_ok(move |_, window, cx| {
                     weak_view
                         .update(cx, |this, cx| {
@@ -330,7 +329,7 @@ impl Render for NewAccount {
                         v_flex()
                             .gap_1()
                             .text_sm()
-                            .child(shared_t!("new_account.name"))
+                            .child(SharedString::from("What should people call you?"))
                             .child(
                                 TextInput::new(&self.name_input)
                                     .disabled(self.submitting)
@@ -340,7 +339,7 @@ impl Render for NewAccount {
                     .child(divider(cx))
                     .child(
                         Button::new("submit")
-                            .label(t!("common.continue"))
+                            .label("Continue")
                             .primary()
                             .loading(self.submitting)
                             .disabled(self.submitting || self.uploading)

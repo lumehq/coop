@@ -12,7 +12,6 @@ use gpui::{
     RetainAllImageCache, SharedString, Styled, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
-use i18n::{shared_t, t};
 use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
@@ -69,7 +68,7 @@ impl Sidebar {
         let search_results = cx.new(|_| None);
 
         let find_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder(t!("sidebar.search_label")));
+            cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
 
         let chat = ChatRegistry::global(cx);
         let mut subscriptions = smallvec![];
@@ -432,12 +431,12 @@ impl Sidebar {
             room
         } else {
             let Some(result) = self.search_results.read(cx).as_ref() else {
-                window.push_notification(t!("common.room_error"), cx);
+                window.push_notification("Failed to open room. Please try again later.", cx);
                 return;
             };
 
             let Some(room) = result.iter().find(|this| this.read(cx).id == id).cloned() else {
-                window.push_notification(t!("common.room_error"), cx);
+                window.push_notification("Failed to open room. Please try again later.", cx);
                 return;
             };
 
@@ -456,7 +455,7 @@ impl Sidebar {
         ChatRegistry::global(cx).update(cx, |this, cx| {
             this.get_rooms(cx);
         });
-        window.push_notification(t!("common.refreshed"), cx);
+        window.push_notification("Refreshed", cx);
     }
 
     fn on_manage(&mut self, _ev: &RelayStatus, window: &mut Window, cx: &mut Context<Self>) {
@@ -492,7 +491,7 @@ impl Sidebar {
             this.show_close(true)
                 .overlay_closable(true)
                 .keyboard(true)
-                .title(shared_t!("manage_relays.modal"))
+                .title(SharedString::from("Messaging Relay Status"))
                 .child(v_flex().pb_4().gap_2().children({
                     let mut items = Vec::with_capacity(relays.len());
 
@@ -524,10 +523,9 @@ impl Sidebar {
                                         .child(url),
                                 )
                                 .child(
-                                    div()
-                                        .text_right()
-                                        .text_color(cx.theme().text_muted)
-                                        .child(shared_t!("manage_relays.time", t = time)),
+                                    div().text_right().text_color(cx.theme().text_muted).child(
+                                        SharedString::from(format!("Last activity: {}", time)),
+                                    ),
                                 ),
                         );
                     }
@@ -649,7 +647,7 @@ impl Render for Sidebar {
                                     this.suffix(
                                         Button::new("find")
                                             .icon(IconName::Search)
-                                            .tooltip(t!("sidebar.search_tooltip"))
+                                            .tooltip("Press Enter to search")
                                             .transparent()
                                             .small(),
                                     )
@@ -675,8 +673,8 @@ impl Render for Sidebar {
                             .flex_none()
                             .child(
                                 Button::new("all")
-                                    .label(t!("sidebar.all_button"))
-                                    .tooltip(t!("sidebar.all_conversations_tooltip"))
+                                    .label("All")
+                                    .tooltip("All ongoing conversations")
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind == &RoomKind::Ongoing, |this| {
                                             this.child(
@@ -696,8 +694,8 @@ impl Render for Sidebar {
                             )
                             .child(
                                 Button::new("requests")
-                                    .label(t!("sidebar.requests_button"))
-                                    .tooltip(t!("sidebar.requests_tooltip"))
+                                    .label("Requests")
+                                    .tooltip("Incoming new conversations")
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind != &RoomKind::Ongoing, |this| {
                                             this.child(
@@ -730,11 +728,11 @@ impl Render for Sidebar {
                                             .rounded()
                                             .popup_menu(move |this, _window, _cx| {
                                                 this.menu(
-                                                    t!("sidebar.reload_menu"),
+                                                    "Reload",
                                                     Box::new(Reload),
                                                 )
                                                 .menu(
-                                                    t!("sidebar.status_menu"),
+                                                    "Relay Status",
                                                     Box::new(RelayStatus),
                                                 )
                                             }),
@@ -757,14 +755,14 @@ impl Render for Sidebar {
                                                 .text_sm()
                                                 .font_semibold()
                                                 .line_height(relative(1.25))
-                                                .child(shared_t!("sidebar.no_conversations")),
+                                                .child(SharedString::from("No conversations")),
                                         )
                                         .child(
                                             div()
                                                 .text_xs()
                                                 .text_color(cx.theme().text_muted)
                                                 .line_height(relative(1.25))
-                                                .child(shared_t!("sidebar.no_conversations_label")),
+                                                .child(SharedString::from("Start a conversation with someone to get started.")),
                                         ),
                                 ))
                             } else {
@@ -781,14 +779,14 @@ impl Render for Sidebar {
                                                 .text_sm()
                                                 .font_semibold()
                                                 .line_height(relative(1.25))
-                                                .child(shared_t!("sidebar.no_requests")),
+                                                .child(SharedString::from("No message requests")),
                                         )
                                         .child(
                                             div()
                                                 .text_xs()
                                                 .text_color(cx.theme().text_muted)
                                                 .line_height(relative(1.25))
-                                                .child(shared_t!("sidebar.no_requests_label")),
+                                                .child(SharedString::from("New message requests from people you don't know will appear here.")),
                                         ),
                                 ))
                             }

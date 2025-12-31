@@ -3,7 +3,6 @@ use gpui::{
     div, px, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
     Styled, Window,
 };
-use i18n::{shared_t, t};
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
@@ -54,7 +53,7 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child(shared_t!("preferences.relay_and_media")),
+                            .child(SharedString::from("Relay and Media")),
                     )
                     .child(
                         v_flex()
@@ -85,13 +84,13 @@ impl Render for Preferences {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().text_muted)
-                                    .child(shared_t!("preferences.media_description")),
+                                    .child(SharedString::from("Coop currently only supports NIP-96 media servers.")),
                             ),
                     )
                     .child(
                         Switch::new("auth")
-                            .label(t!("preferences.auto_auth"))
-                            .description(t!("preferences.auto_auth_description"))
+                            .label("Automatically authenticate for known relays")
+                            .description("After you approve the authentication request, Coop will automatically complete this step next time.")
                             .checked(auto_auth)
                             .on_click(move |_, _window, cx| {
                                 AppSettings::update_auto_auth(!auto_auth, cx);
@@ -109,15 +108,15 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child(shared_t!("preferences.messages_header")),
+                            .child(SharedString::from("Messages")),
                     )
                     .child(
                         v_flex()
                             .gap_2()
                             .child(
                                 Switch::new("screening")
-                                    .label(t!("preferences.screening_label"))
-                                    .description(t!("preferences.screening_description"))
+                                    .label("Screening")
+                                    .description("When opening a chat request, Coop will show a popup to help you verify the sender.")
                                     .checked(screening)
                                     .on_click(move |_, _window, cx| {
                                         AppSettings::update_screening(!screening, cx);
@@ -125,8 +124,8 @@ impl Render for Preferences {
                             )
                             .child(
                                 Switch::new("bypass")
-                                    .label(t!("preferences.bypass_label"))
-                                    .description(t!("preferences.bypass_description"))
+                                    .label("Skip screening for contacts")
+                                    .description("Requests from your contacts will automatically go to inbox.")
                                     .checked(bypass)
                                     .on_click(move |_, _window, cx| {
                                         AppSettings::update_contact_bypass(!bypass, cx);
@@ -134,8 +133,8 @@ impl Render for Preferences {
                             )
                             .child(
                                 Switch::new("backup")
-                                    .label(t!("preferences.backup_label"))
-                                    .description(t!("preferences.backup_description"))
+                                    .label("Backup messages")
+                                    .description("When you send a message, Coop will also forward it to your configured Messaging Relays. Disabling this will cause all messages sent during the current session to disappear when the app is closed.")
                                     .checked(backup)
                                     .on_click(move |_, _window, cx| {
                                         AppSettings::update_backup_messages(!backup, cx);
@@ -154,15 +153,15 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child(shared_t!("preferences.display_header")),
+                            .child(SharedString::from("Display")),
                     )
                     .child(
                         v_flex()
                             .gap_2()
                             .child(
                                 Switch::new("hide_avatar")
-                                    .label(t!("preferences.hide_avatars_label"))
-                                    .description(t!("preferences.hide_avatar_description"))
+                                    .label("Hide user avatars")
+                                    .description("Unload all avatar pictures to improve performance and reduce memory usage.")
                                     .checked(hide)
                                     .on_click(move |_, _window, cx| {
                                         AppSettings::update_hide_user_avatars(!hide, cx);
@@ -170,8 +169,8 @@ impl Render for Preferences {
                             )
                             .child(
                                 Switch::new("proxy_avatar")
-                                    .label(t!("preferences.proxy_avatars_label"))
-                                    .description(t!("preferences.proxy_description"))
+                                    .label("Proxy user avatars")
+                                    .description("Use wsrv.nl to resize and downscale avatar pictures (saves ~50MB of data).")
                                     .checked(proxy)
                                     .on_click(move |_, _window, cx| {
                                         AppSettings::update_proxy_user_avatars(!proxy, cx);
