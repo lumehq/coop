@@ -17,4 +17,5 @@ nostr-sdk.workspace = true
 anyhow.workspace = true
 smallvec.workspace = true
 smol.workspace = true
+flume.workspace = true
 log.workspace = true

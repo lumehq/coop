@@ -3,25 +3,6 @@
 version = 4
 
 [[package]]
-name = "account"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "common",
- "gpui",
- "log",
- "nostr-sdk",
- "serde",
- "serde_json",
- "settings",
- "smallvec",
- "smol",
- "state",
- "theme",
- "ui",
-]
-
-[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1025,10 +1006,8 @@ dependencies = [
 name = "chat"
 version = "0.3.0"
 dependencies = [
- "account",
  "anyhow",
  "common",
- "encryption",
  "flume",
  "futures",
  "fuzzy-matcher",
@@ -1049,12 +1028,10 @@ dependencies = [
 name = "chat_ui"
 version = "0.3.0"
 dependencies = [
- "account",
  "anyhow",
  "chat",
  "common",
  "emojis",
- "encryption",
  "gpui",
  "gpui_tokio",
  "indexset",
@@ -1308,15 +1285,12 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 name = "coop"
 version = "0.3.0"
 dependencies = [
- "account",
  "anyhow",
  "assets",
  "auto_update",
  "chat",
  "chat_ui",
  "common",
- "encryption",
- "encryption_ui",
  "futures",
  "gpui",
  "gpui_tokio",
@@ -1823,49 +1797,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "encryption"
-version = "0.3.0"
-dependencies = [
- "account",
- "anyhow",
- "common",
- "flume",
- "futures",
- "gpui",
- "log",
- "nostr-sdk",
- "serde",
- "serde_json",
- "smallvec",
- "smol",
- "state",
-]
-
-[[package]]
-name = "encryption_ui"
-version = "0.3.0"
-dependencies = [
- "account",
- "anyhow",
- "common",
- "encryption",
- "futures",
- "gpui",
- "itertools 0.13.0",
- "log",
- "nostr-sdk",
- "person",
- "serde",
- "serde_json",
- "settings",
- "smallvec",
- "smol",
- "state",
- "theme",
- "ui",
 ]
 
 [[package]]
@@ -5198,6 +5129,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "common",
+ "flume",
  "gpui",
  "log",
  "nostr-sdk",
@@ -6079,6 +6011,21 @@ dependencies = [
 
 [[package]]
 name = "state"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "common",
+ "flume",
+ "gpui",
+ "log",
+ "nostr-lmdb",
+ "nostr-sdk",
+ "rustls",
+ "smol",
+]
+
+[[package]]
+name = "state_old"
 version = "0.3.0"
 dependencies = [
  "anyhow",
