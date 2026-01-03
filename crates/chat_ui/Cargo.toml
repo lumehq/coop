@@ -9,8 +9,6 @@ state = { path = "../state" }
 ui = { path = "../ui" }
 theme = { path = "../theme" }
 common = { path = "../common" }
-account = { path = "../account" }
-encryption = { path = "../encryption" }
 person = { path = "../person" }
 chat = { path = "../chat" }
 settings = { path = "../settings" }

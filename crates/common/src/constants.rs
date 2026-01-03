@@ -2,12 +2,11 @@ pub const CLIENT_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
 
 /// Bootstrap Relays.
-pub const BOOTSTRAP_RELAYS: [&str; 5] = [
+pub const BOOTSTRAP_RELAYS: [&str; 4] = [
     "wss://relay.damus.io",
     "wss://relay.primal.net",
     "wss://relay.nos.social",
     "wss://user.kindpag.es",
-    "wss://purplepag.es",
 ];
 
 /// Search Relays.

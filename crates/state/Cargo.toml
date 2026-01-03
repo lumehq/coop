@@ -12,10 +12,8 @@ nostr-lmdb.workspace = true
 
 gpui.workspace = true
 smol.workspace = true
-smallvec.workspace = true
+flume.workspace = true
 log.workspace = true
 anyhow.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 
-rustls = "0.23.23"
+rustls = "0.23"

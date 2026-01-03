@@ -5,20 +5,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use account::Account;
 use anyhow::{anyhow, Context as AnyhowContext, Error};
 use common::{EventUtils, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT};
-use encryption::Encryption;
 use flume::Sender;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task};
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task};
 pub use message::*;
 use nostr_sdk::prelude::*;
 pub use room::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use state::{initialized_at, NostrRegistry, GIFTWRAP_SUBSCRIPTION};
+use state::{tracker, NostrRegistry, GIFTWRAP_SUBSCRIPTION};
 
 mod message;
 mod room;
@@ -35,16 +33,10 @@ impl Global for GlobalChatRegistry {}
 #[derive(Debug)]
 pub struct ChatRegistry {
     /// Collection of all chat rooms
-    pub rooms: Vec<Entity<Room>>,
+    rooms: Vec<Entity<Room>>,
 
     /// Loading status of the registry
-    pub loading: bool,
-
-    /// Async task for handling notifications
-    handle_notifications: Task<()>,
-
-    /// Event subscriptions
-    _subscriptions: SmallVec<[Subscription; 1]>,
+    loading: bool,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 4]>,
@@ -79,53 +71,30 @@ impl ChatRegistry {
 
     /// Create a new chat registry instance
     fn new(cx: &mut Context<Self>) -> Self {
-        let encryption = Encryption::global(cx);
-        let encryption_key = encryption.read(cx).encryption.clone();
-
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
+        // A flag to indicate if the registry is loading
         let status = Arc::new(AtomicBool::new(true));
+
+        // Channel for communication between nostr and gpui
         let (tx, rx) = flume::bounded::<Signal>(2048);
 
-        let handle_notifications = cx.background_spawn({
-            let client = nostr.read(cx).client();
-            let status = Arc::clone(&status);
-            let tx = tx.clone();
-            let signer: Option<Arc<dyn NostrSigner>> = None;
-
-            async move { Self::handle_notifications(&client, &signer, &tx, &status).await }
-        });
-
-        let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
 
-        subscriptions.push(
-            // Observe the encryption global state
-            cx.observe(&encryption_key, {
+        tasks.push(
+            // Handle nostr notifications
+            cx.background_spawn({
+                let client = client.clone();
                 let status = Arc::clone(&status);
                 let tx = tx.clone();
 
-                move |this, state, cx| {
-                    if let Some(signer) = state.read(cx).clone() {
-                        this.handle_notifications = cx.background_spawn({
-                            let client = nostr.read(cx).client();
-                            let status = Arc::clone(&status);
-                            let tx = tx.clone();
-                            let signer = Some(signer);
-
-                            async move {
-                                Self::handle_notifications(&client, &signer, &tx, &status).await
-                            }
-                        });
-                        cx.notify();
-                    }
-                }
+                async move { Self::handle_notifications(&client, &status, &tx).await }
             }),
         );
 
         tasks.push(
-            // Handle unwrapping status
+            // Handle unwrapping progress
             cx.background_spawn(
                 async move { Self::handle_unwrapping(&client, &status, &tx).await },
             ),
@@ -140,20 +109,20 @@ impl ChatRegistry {
                             this.update(cx, |this, cx| {
                                 this.new_message(message, cx);
                             })
-                            .expect("Entity has been released");
+                            .ok();
                         }
                         Signal::Eose => {
                             this.update(cx, |this, cx| {
                                 this.get_rooms(cx);
                             })
-                            .expect("Entity has been released");
+                            .ok();
                         }
                         Signal::Loading(status) => {
                             this.update(cx, |this, cx| {
                                 this.set_loading(status, cx);
                                 this.get_rooms(cx);
                             })
-                            .expect("Entity has been released");
+                            .ok();
                         }
                     };
                 }
@@ -163,21 +132,12 @@ impl ChatRegistry {
         Self {
             rooms: vec![],
             loading: true,
-            handle_notifications,
-            _subscriptions: subscriptions,
             _tasks: tasks,
         }
     }
 
-    async fn handle_notifications<T>(
-        client: &Client,
-        signer: &Option<T>,
-        tx: &Sender<Signal>,
-        status: &Arc<AtomicBool>,
-    ) where
-        T: NostrSigner,
-    {
-        let initialized_at = initialized_at();
+    async fn handle_notifications(client: &Client, loading: &Arc<AtomicBool>, tx: &Sender<Signal>) {
+        let initialized_at = Timestamp::now();
         let subscription_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
 
         let mut notifications = client.notifications();
@@ -203,13 +163,13 @@ impl ChatRegistry {
                     }
 
                     // Extract the rumor from the gift wrap event
-                    match Self::extract_rumor(client, signer, event.as_ref()).await {
+                    match Self::extract_rumor(client, event.as_ref()).await {
                         Ok(rumor) => {
                             // Get all public keys
                             public_keys.extend(rumor.all_pubkeys());
 
                             let limit_reached = public_keys.len() >= METADATA_BATCH_LIMIT;
-                            let done = !status.load(Ordering::Acquire) && !public_keys.is_empty();
+                            let done = !loading.load(Ordering::Acquire) && !public_keys.is_empty();
 
                             // Get metadata for all public keys if the limit is reached
                             if limit_reached || done {
@@ -218,17 +178,24 @@ impl ChatRegistry {
                                 Self::get_metadata(client, public_keys).await.ok();
                             }
 
-                            match &rumor.created_at >= initialized_at {
+                            match rumor.created_at >= initialized_at {
                                 true => {
-                                    let new_message = NewMessage::new(event.id, rumor);
-                                    let signal = Signal::Message(new_message);
+                                    let sent_by_coop = {
+                                        let tracker = tracker().read().await;
+                                        tracker.is_sent_by_coop(&event.id)
+                                    };
 
-                                    if let Err(e) = tx.send_async(signal).await {
-                                        log::error!("Failed to send signal: {}", e);
+                                    if !sent_by_coop {
+                                        let new_message = NewMessage::new(event.id, rumor);
+                                        let signal = Signal::Message(new_message);
+
+                                        if let Err(e) = tx.send_async(signal).await {
+                                            log::error!("Failed to send signal: {}", e);
+                                        }
                                     }
                                 }
                                 false => {
-                                    status.store(true, Ordering::Release);
+                                    loading.store(true, Ordering::Release);
                                 }
                             }
                         }
@@ -530,7 +497,7 @@ impl ChatRegistry {
     pub fn new_message(&mut self, message: NewMessage, cx: &mut Context<Self>) {
         let id = message.rumor.uniq_id();
         let author = message.rumor.pubkey;
-        let account = Account::global(cx);
+        let nostr = NostrRegistry::global(cx);
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             let is_new_event = message.rumor.created_at > room.read(cx).created_at;
@@ -544,7 +511,7 @@ impl ChatRegistry {
                 }
 
                 // Set this room is ongoing if the new message is from current user
-                if author == account.read(cx).public_key() {
+                if author == nostr.read(cx).identity(cx).public_key() {
                     this.set_ongoing(cx);
                 }
 
@@ -566,21 +533,14 @@ impl ChatRegistry {
     }
 
     // Unwraps a gift-wrapped event and processes its contents.
-    async fn extract_rumor<T>(
-        client: &Client,
-        signer: &Option<T>,
-        gift_wrap: &Event,
-    ) -> Result<UnsignedEvent, Error>
-    where
-        T: NostrSigner,
-    {
+    async fn extract_rumor(client: &Client, gift_wrap: &Event) -> Result<UnsignedEvent, Error> {
         // Try to get cached rumor first
         if let Ok(event) = Self::get_rumor(client, gift_wrap.id).await {
             return Ok(event);
         }
 
         // Try to unwrap with the available signer
-        let unwrapped = Self::try_unwrap(client, signer, gift_wrap).await?;
+        let unwrapped = Self::try_unwrap(client, gift_wrap).await?;
         let mut rumor_unsigned = unwrapped.rumor;
 
         // Generate event id for the rumor if it doesn't have one
@@ -593,39 +553,7 @@ impl ChatRegistry {
     }
 
     // Helper method to try unwrapping with different signers
-    async fn try_unwrap<T>(
-        client: &Client,
-        signer: &Option<T>,
-        gift_wrap: &Event,
-    ) -> Result<UnwrappedGift, Error>
-    where
-        T: NostrSigner,
-    {
-        if let Some(custom_signer) = signer.as_ref() {
-            if let Ok(seal) = custom_signer
-                .nip44_decrypt(&gift_wrap.pubkey, &gift_wrap.content)
-                .await
-            {
-                let seal: Event = Event::from_json(seal)?;
-                seal.verify_with_ctx(&SECP256K1)?;
-
-                // Decrypt the rumor
-                // TODO: verify the sender
-                let rumor = custom_signer
-                    .nip44_decrypt(&seal.pubkey, &seal.content)
-                    .await?;
-
-                // Construct the unsigned event
-                let rumor = UnsignedEvent::from_json(rumor)?;
-
-                // Return the unwrapped gift
-                return Ok(UnwrappedGift {
-                    sender: rumor.pubkey,
-                    rumor,
-                });
-            }
-        }
-
+    async fn try_unwrap(client: &Client, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
         let signer = client.signer().await?;
         let unwrapped = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
 
