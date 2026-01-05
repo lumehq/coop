@@ -259,17 +259,11 @@ impl UserProfile {
 
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let gossip = nostr.read(cx).gossip();
+        let public_key = nostr.read(cx).identity().read(cx).public_key();
+        let write_relays = nostr.read(cx).write_relays(&public_key, cx);
 
         cx.background_spawn(async move {
             let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let gossip = gossip.read().await;
-            let write_relays = gossip.inbox_relays(&public_key);
-
-            // Ensure connections to the write relays
-            gossip.ensure_connections(&client, &write_relays).await;
 
             // Sign the new metadata event
             let event = EventBuilder::metadata(&new_metadata).sign(&signer).await?;

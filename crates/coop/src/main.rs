@@ -96,12 +96,6 @@ fn main() {
                 // Initialize settings
                 settings::init(cx);
 
-                // Initialize account state
-                account::init(cx);
-
-                // Initialize encryption state
-                encryption::init(cx);
-
                 // Initialize app registry
                 chat::init(cx);
 

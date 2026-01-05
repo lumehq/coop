@@ -253,6 +253,11 @@ impl ChatRegistry {
         }
     }
 
+    /// Get the loading status of the chat registry
+    pub fn loading(&self) -> bool {
+        self.loading
+    }
+
     /// Set the loading status of the chat registry
     pub fn set_loading(&mut self, loading: bool, cx: &mut Context<Self>) {
         self.loading = loading;
@@ -511,7 +516,7 @@ impl ChatRegistry {
                 }
 
                 // Set this room is ongoing if the new message is from current user
-                if author == nostr.read(cx).identity(cx).public_key() {
+                if author == nostr.read(cx).identity().read(cx).public_key() {
                     this.set_ongoing(cx);
                 }
 

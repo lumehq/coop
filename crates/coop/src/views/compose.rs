@@ -1,7 +1,6 @@
 use std::ops::Range;
 use std::time::Duration;
 
-use account::Account;
 use anyhow::{anyhow, Error};
 use chat::{ChatRegistry, Room};
 use common::{nip05_profile, RenderedProfile, TextUtils, BOOTSTRAP_RELAYS};
@@ -312,9 +311,8 @@ impl Compose {
 
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let chat = ChatRegistry::global(cx);
-
-        let account = Account::global(cx);
-        let public_key = account.read(cx).public_key();
+        let nostr = NostrRegistry::global(cx);
+        let public_key = nostr.read(cx).identity().read(cx).public_key();
 
         let receivers: Vec<PublicKey> = self.selected(cx);
         let subject_input = self.title_input.read(cx).value();

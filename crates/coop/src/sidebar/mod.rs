@@ -1,7 +1,6 @@
 use std::ops::Range;
 use std::time::Duration;
 
-use account::Account;
 use anyhow::{anyhow, Error};
 use chat::{ChatEvent, ChatRegistry, Room, RoomKind};
 use common::{DebouncedDelay, RenderedTimestamp, TextUtils, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
@@ -199,11 +198,9 @@ impl Sidebar {
     }
 
     fn search_by_nip50(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let account = Account::global(cx);
-        let public_key = account.read(cx).public_key();
-
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+        let public_key = nostr.read(cx).identity().read(cx).public_key();
 
         let query = query.to_owned();
 
@@ -597,7 +594,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let chat = ChatRegistry::global(cx);
-        let loading = chat.read(cx).loading;
+        let loading = chat.read(cx).loading();
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.search_results.read(cx).as_ref() {

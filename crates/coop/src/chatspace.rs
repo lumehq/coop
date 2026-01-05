@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
-use account::Account;
 use auto_update::{AutoUpdateStatus, AutoUpdater};
 use chat::{ChatEvent, ChatRegistry};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
 use common::{RenderedProfile, DEFAULT_SIDEBAR_WIDTH};
-use encryption::Encryption;
-use encryption_ui::EncryptionPanel;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, relative, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
@@ -19,6 +16,7 @@ use person::PersonRegistry;
 use relay_auth::RelayAuth;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use state::NostrRegistry;
 use theme::{ActiveTheme, Theme, ThemeMode, ThemeRegistry};
 use title_bar::TitleBar;
 use ui::avatar::Avatar;
@@ -27,7 +25,6 @@ use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
 use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
-use ui::popover::{Popover, PopoverContent};
 use ui::popup_menu::PopupMenuExt;
 use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
@@ -61,9 +58,6 @@ pub struct ChatSpace {
     /// App's Dock Area
     dock: Entity<DockArea>,
 
-    /// App's Encryption Panel
-    encryption_panel: Entity<EncryptionPanel>,
-
     /// Determines if the chat space is ready to use
     ready: bool,
 
@@ -73,13 +67,14 @@ pub struct ChatSpace {
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let nostr = NostrRegistry::global(cx);
         let chat = ChatRegistry::global(cx);
         let keystore = KeyStore::global(cx);
-        let account = Account::global(cx);
 
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
-        let encryption_panel = encryption_ui::init(window, cx);
+
+        let identity = nostr.read(cx).identity();
 
         let mut subscriptions = smallvec![];
 
@@ -92,8 +87,8 @@ impl ChatSpace {
 
         subscriptions.push(
             // Observe account entity changes
-            cx.observe_in(&account, window, move |this, state, window, cx| {
-                if !this.ready && state.read(cx).has_account() {
+            cx.observe_in(&identity, window, move |this, state, window, cx| {
+                if !this.ready && state.read(cx).has_public_key() {
                     this.set_default_layout(window, cx);
 
                     // Load all chat room in the database if available
@@ -175,7 +170,6 @@ impl ChatSpace {
         Self {
             dock,
             title_bar,
-            encryption_panel,
             ready: false,
             _subscriptions: subscriptions,
         }
@@ -447,11 +441,11 @@ impl ChatSpace {
     }
 
     fn titlebar_left(&mut self, _window: &mut Window, cx: &Context<Self>) -> impl IntoElement {
-        let account = Account::global(cx);
+        let nostr = NostrRegistry::global(cx);
         let chat = ChatRegistry::global(cx);
-        let status = chat.read(cx).loading;
+        let status = chat.read(cx).loading();
 
-        if !account.read(cx).has_account() {
+        if !nostr.read(cx).identity().read(cx).has_public_key() {
             return div();
         }
 
@@ -479,10 +473,12 @@ impl ChatSpace {
     fn titlebar_right(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let auto_update = AutoUpdater::global(cx);
-        let account = Account::global(cx);
+
         let relay_auth = RelayAuth::global(cx);
         let pending_requests = relay_auth.read(cx).pending_requests(cx);
-        let encryption_panel = self.encryption_panel.downgrade();
+
+        let nostr = NostrRegistry::global(cx);
+        let identity = nostr.read(cx).identity();
 
         h_flex()
             .gap_2()
@@ -542,15 +538,9 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when(account.read(cx).has_account(), |this| {
-                let account = Account::global(cx);
-                let public_key = account.read(cx).public_key();
-
+            .when_some(identity.read(cx).option_public_key(), |this, public_key| {
                 let persons = PersonRegistry::global(cx);
                 let profile = persons.read(cx).get_person(&public_key, cx);
-
-                let encryption = Encryption::global(cx);
-                let has_encryption = encryption.read(cx).has_encryption(cx);
 
                 let keystore = KeyStore::global(cx);
                 let is_using_file_keystore = keystore.read(cx).is_using_file_keystore();
@@ -562,82 +552,38 @@ impl ChatSpace {
                 };
 
                 this.child(
-                    h_flex()
-                        .gap_1()
-                        .child(
-                            Popover::new("encryption")
-                                .trigger(
-                                    Button::new("encryption-trigger")
-                                        .tooltip("Manage Encryption Key")
-                                        .icon(IconName::Encryption)
-                                        .rounded()
-                                        .small()
-                                        .cta()
-                                        .map(|this| match has_encryption {
-                                            true => this.ghost_alt(),
-                                            false => this.warning(),
-                                        }),
+                    Button::new("user")
+                        .small()
+                        .reverse()
+                        .transparent()
+                        .icon(IconName::CaretDown)
+                        .child(Avatar::new(profile.avatar(proxy)).size(rems(1.45)))
+                        .popup_menu(move |this, _window, _cx| {
+                            this.label(profile.display_name())
+                                .menu_with_icon(
+                                    "Profile",
+                                    IconName::EmojiFill,
+                                    Box::new(ViewProfile),
                                 )
-                                .content(move |window, cx| {
-                                    let encryption_panel = encryption_panel.clone();
-
-                                    cx.new(|cx| {
-                                        PopoverContent::new(window, cx, move |_window, _cx| {
-                                            if let Some(view) = encryption_panel.upgrade() {
-                                                view.clone().into_any_element()
-                                            } else {
-                                                div().into_any_element()
-                                            }
-                                        })
-                                    })
-                                }),
-                        )
-                        .child(
-                            Button::new("user")
-                                .small()
-                                .reverse()
-                                .transparent()
-                                .icon(IconName::CaretDown)
-                                .child(Avatar::new(profile.avatar(proxy)).size(rems(1.45)))
-                                .popup_menu(move |this, _window, _cx| {
-                                    this.label(profile.display_name())
-                                        .menu_with_icon(
-                                            "Profile",
-                                            IconName::EmojiFill,
-                                            Box::new(ViewProfile),
-                                        )
-                                        .menu_with_icon(
-                                            "Messaging Relays",
-                                            IconName::Server,
-                                            Box::new(ViewRelays),
-                                        )
-                                        .separator()
-                                        .label(SharedString::from("Keyring Service"))
-                                        .menu_with_icon_and_disabled(
-                                            keyring_label.clone(),
-                                            IconName::Encryption,
-                                            Box::new(KeyringPopup),
-                                            !is_using_file_keystore,
-                                        )
-                                        .separator()
-                                        .menu_with_icon(
-                                            "Dark Mode",
-                                            IconName::Sun,
-                                            Box::new(DarkMode),
-                                        )
-                                        .menu_with_icon("Themes", IconName::Moon, Box::new(Themes))
-                                        .menu_with_icon(
-                                            "Settings",
-                                            IconName::Settings,
-                                            Box::new(Settings),
-                                        )
-                                        .menu_with_icon(
-                                            "Sign Out",
-                                            IconName::Logout,
-                                            Box::new(Logout),
-                                        )
-                                }),
-                        ),
+                                .menu_with_icon(
+                                    "Messaging Relays",
+                                    IconName::Server,
+                                    Box::new(ViewRelays),
+                                )
+                                .separator()
+                                .label(SharedString::from("Keyring Service"))
+                                .menu_with_icon_and_disabled(
+                                    keyring_label.clone(),
+                                    IconName::Encryption,
+                                    Box::new(KeyringPopup),
+                                    !is_using_file_keystore,
+                                )
+                                .separator()
+                                .menu_with_icon("Dark Mode", IconName::Sun, Box::new(DarkMode))
+                                .menu_with_icon("Themes", IconName::Moon, Box::new(Themes))
+                                .menu_with_icon("Settings", IconName::Settings, Box::new(Settings))
+                                .menu_with_icon("Sign Out", IconName::Logout, Box::new(Logout))
+                        }),
                 )
             })
     }

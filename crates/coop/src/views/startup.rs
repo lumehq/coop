@@ -29,11 +29,16 @@ pub fn init(cre: Credential, window: &mut Window, cx: &mut App) -> Entity<Startu
 /// Startup
 #[derive(Debug)]
 pub struct Startup {
-    credential: Credential,
-    loading: bool,
-
     name: SharedString,
     focus_handle: FocusHandle,
+
+    /// Local user credentials
+    credential: Credential,
+
+    /// Whether the loadng is in progress
+    loading: bool,
+
+    /// Image cache
     image_cache: Entity<RetainAllImageCache>,
 
     /// Event subscriptions
@@ -164,15 +169,12 @@ impl Startup {
     }
 
     fn login_with_keys(&mut self, secret: SecretKey, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
         let keys = Keys::new(secret);
+        let nostr = NostrRegistry::global(cx);
 
-        // Update the signer
-        cx.background_spawn(async move {
-            client.set_signer(keys).await;
+        nostr.update(cx, |this, cx| {
+            this.set_signer(keys, cx);
         })
-        .detach();
     }
 
     fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {

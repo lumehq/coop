@@ -263,7 +263,7 @@ impl Room {
     pub fn display_member(&self, cx: &App) -> Profile {
         let persons = PersonRegistry::global(cx);
         let nostr = NostrRegistry::global(cx);
-        let public_key = nostr.read(cx).identity(cx).public_key();
+        let public_key = nostr.read(cx).identity().read(cx).public_key();
 
         let target_member = self
             .members
@@ -369,7 +369,7 @@ impl Room {
         let nostr = NostrRegistry::global(cx);
 
         // Get current user
-        let public_key = nostr.read(cx).identity(cx).public_key();
+        let public_key = nostr.read(cx).identity().read(cx).public_key();
 
         // Get room's subject
         let subject = self.subject.clone();
@@ -438,7 +438,7 @@ impl Room {
         let client = nostr.read(cx).client();
 
         // Get current user's public key and relays
-        let current_user = nostr.read(cx).identity(cx).public_key();
+        let current_user = nostr.read(cx).identity().read(cx).public_key();
         let current_user_relays = nostr.read(cx).messaging_relays(&current_user, cx);
 
         let rumor = rumor.to_owned();

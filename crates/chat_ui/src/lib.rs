@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 pub use actions::*;
-use chat::{Message, RenderedMessage, Room, RoomKind, RoomSignal, SendOptions, SendReport};
+use chat::{Message, RenderedMessage, Room, RoomKind, RoomSignal, SendReport};
 use common::{nip96_upload, RenderedProfile, RenderedTimestamp};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -59,7 +59,6 @@ pub struct ChatPanel {
 
     // New Message
     input: Entity<InputState>,
-    options: Entity<SendOptions>,
     replies_to: Entity<HashSet<EventId>>,
 
     // Media Attachment
@@ -87,7 +86,6 @@ impl ChatPanel {
 
         let attachments = cx.new(|_| vec![]);
         let replies_to = cx.new(|_| HashSet::new());
-        let options = cx.new(|_| SendOptions::default());
 
         let id = room.read(cx).id.to_string().into();
         let messages = BTreeSet::from([Message::system()]);
@@ -145,18 +143,11 @@ impl ChatPanel {
             cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
                 match signal {
                     RoomSignal::NewMessage((gift_wrap_id, event)) => {
-                        let nostr = NostrRegistry::global(cx);
-                        let tracker = nostr.read(cx).tracker();
-                        let gift_wrap_id = gift_wrap_id.to_owned();
                         let message = Message::user(event.clone());
 
                         cx.spawn_in(window, async move |this, cx| {
-                            let tracker = tracker.read().await;
-
                             this.update_in(cx, |this, _window, cx| {
-                                if !tracker.sent_ids().contains(&gift_wrap_id) {
-                                    this.insert_message(message, false, cx);
-                                }
+                                this.insert_message(message, false, cx);
                             })
                             .ok();
                         })
@@ -189,7 +180,6 @@ impl ChatPanel {
             input,
             replies_to,
             attachments,
-            options,
             rendered_texts_by_id: BTreeMap::new(),
             reports_by_id: BTreeMap::new(),
             uploading: false,
@@ -271,14 +261,13 @@ impl ChatPanel {
 
         // Get the current room entity
         let room = self.room.read(cx);
-        let opts = self.options.read(cx);
 
         // Create a temporary message for optimistic update
         let rumor = room.create_message(&content, replies.as_ref(), cx);
         let rumor_id = rumor.id.unwrap();
 
         // Create a task for sending the message in the background
-        let send_message = room.send_message(&rumor, opts, cx);
+        let send_message = room.send_message(&rumor, cx);
 
         // Optimistically update message list
         cx.spawn_in(window, async move |this, cx| {
@@ -438,10 +427,6 @@ impl ChatPanel {
     fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Profile {
         let persons = PersonRegistry::global(cx);
         persons.read(cx).get_person(public_key, cx)
-    }
-
-    fn signer_kind(&self, cx: &App) -> SignerKind {
-        self.options.read(cx).signer_kind
     }
 
     fn scroll_to(&self, id: EventId) {
@@ -1235,71 +1220,6 @@ impl ChatPanel {
                 });
             })
     }
-
-    fn on_open_seen_on(&mut self, ev: &SeenOn, window: &mut Window, cx: &mut Context<Self>) {
-        let id = ev.0;
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-        let tracker = nostr.read(cx).tracker();
-
-        let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
-            let tracker = tracker.read().await;
-            let mut relays: Vec<RelayUrl> = vec![];
-
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .event(id)
-                .limit(1);
-
-            if let Some(event) = client.database().query(filter).await?.first_owned() {
-                if let Some(Ok(id)) = event.tags.identifier().map(EventId::parse) {
-                    if let Some(urls) = tracker.seen_on_relays.get(&id).cloned() {
-                        relays.extend(urls);
-                    }
-                }
-            }
-
-            Ok(relays)
-        });
-
-        cx.spawn_in(window, async move |_, cx| {
-            if let Ok(urls) = task.await {
-                cx.update(|window, cx| {
-                    window.open_modal(cx, move |this, _window, cx| {
-                        this.show_close(true)
-                            .title(SharedString::from("Seen on"))
-                            .child(v_flex().pb_4().gap_2().children({
-                                let mut items = Vec::with_capacity(urls.len());
-
-                                for url in urls.clone().into_iter() {
-                                    items.push(
-                                        h_flex()
-                                            .h_8()
-                                            .px_2()
-                                            .bg(cx.theme().elevated_surface_background)
-                                            .rounded(cx.theme().radius)
-                                            .font_semibold()
-                                            .text_xs()
-                                            .child(SharedString::from(url.to_string())),
-                                    )
-                                }
-
-                                items
-                            }))
-                    });
-                })
-                .ok();
-            }
-        })
-        .detach();
-    }
-
-    fn on_set_encryption(&mut self, ev: &SetSigner, _: &mut Window, cx: &mut Context<Self>) {
-        self.options.update(cx, move |this, cx| {
-            this.signer_kind = ev.0;
-            cx.notify();
-        });
-    }
 }
 
 impl Panel for ChatPanel {
@@ -1339,11 +1259,7 @@ impl Focusable for ChatPanel {
 
 impl Render for ChatPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let kind = self.signer_kind(cx);
-
         v_flex()
-            .on_action(cx.listener(Self::on_open_seen_on))
-            .on_action(cx.listener(Self::on_set_encryption))
             .image_cache(self.image_cache.clone())
             .size_full()
             .child(
@@ -1398,31 +1314,7 @@ impl Render for ChatPanel {
                                                     .large(),
                                             ),
                                     )
-                                    .child(TextInput::new(&self.input))
-                                    .child(
-                                        Button::new("encryptions")
-                                            .icon(IconName::Encryption)
-                                            .ghost()
-                                            .large()
-                                            .popup_menu(move |this, _window, _cx| {
-                                                this.label("Encrypt by:")
-                                                    .menu_with_check(
-                                                        "Encryption Key",
-                                                        matches!(kind, SignerKind::Encryption),
-                                                        Box::new(SetSigner(SignerKind::Encryption)),
-                                                    )
-                                                    .menu_with_check(
-                                                        "User's Identity",
-                                                        matches!(kind, SignerKind::User),
-                                                        Box::new(SetSigner(SignerKind::User)),
-                                                    )
-                                                    .menu_with_check(
-                                                        "Auto",
-                                                        matches!(kind, SignerKind::Auto),
-                                                        Box::new(SetSigner(SignerKind::Auto)),
-                                                    )
-                                            }),
-                                    ),
+                                    .child(TextInput::new(&self.input)),
                             ),
                     ),
             )

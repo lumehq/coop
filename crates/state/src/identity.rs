@@ -76,6 +76,11 @@ impl Identity {
     }
 
     /// Returns the public key of the identity.
+    pub fn option_public_key(&self) -> Option<PublicKey> {
+        self.public_key
+    }
+
+    /// Returns the public key of the identity.
     pub fn public_key(&self) -> PublicKey {
         // This method is safe to unwrap because the public key is always called when the identity is created.
         self.public_key.unwrap()

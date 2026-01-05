@@ -286,8 +286,8 @@ impl NostrRegistry {
     }
 
     /// Get current identity
-    pub fn identity(&self, cx: &App) -> Identity {
-        self.identity.read(cx).clone()
+    pub fn identity(&self) -> Entity<Identity> {
+        self.identity.clone()
     }
 
     /// Get a relay hint (messaging relay) for a given public key
@@ -299,9 +299,58 @@ impl NostrRegistry {
             .cloned()
     }
 
+    /// Get a list of write relays for a given public key
+    pub fn write_relays(&self, public_key: &PublicKey, cx: &App) -> Vec<RelayUrl> {
+        let client = self.client();
+        let relays = self.gossip.read(cx).write_relays(public_key);
+        let async_relays = relays.clone();
+
+        // Ensure relay connections
+        cx.background_spawn(async move {
+            for url in async_relays.iter() {
+                client.add_relay(url).await.ok();
+                client.connect_relay(url).await.ok();
+            }
+        })
+        .detach();
+
+        relays
+    }
+
+    /// Get a list of read relays for a given public key
+    pub fn read_relays(&self, public_key: &PublicKey, cx: &App) -> Vec<RelayUrl> {
+        let client = self.client();
+        let relays = self.gossip.read(cx).read_relays(public_key);
+        let async_relays = relays.clone();
+
+        // Ensure relay connections
+        cx.background_spawn(async move {
+            for url in async_relays.iter() {
+                client.add_relay(url).await.ok();
+                client.connect_relay(url).await.ok();
+            }
+        })
+        .detach();
+
+        relays
+    }
+
     /// Get a list of messaging relays for a given public key
     pub fn messaging_relays(&self, public_key: &PublicKey, cx: &App) -> Vec<RelayUrl> {
-        self.gossip.read(cx).messaging_relays(public_key)
+        let client = self.client();
+        let relays = self.gossip.read(cx).messaging_relays(public_key);
+        let async_relays = relays.clone();
+
+        // Ensure relay connections
+        cx.background_spawn(async move {
+            for url in async_relays.iter() {
+                client.add_relay(url).await.ok();
+                client.connect_relay(url).await.ok();
+            }
+        })
+        .detach();
+
+        relays
     }
 
     /// Set the signer for the nostr client and verify the public key
@@ -370,7 +419,7 @@ impl NostrRegistry {
     fn get_relay_list(&mut self, cx: &mut Context<Self>) {
         let client = self.client();
         let async_identity = self.identity.downgrade();
-        let public_key = self.identity(cx).public_key();
+        let public_key = self.identity().read(cx).public_key();
 
         let task: Task<Result<RelayState, Error>> = cx.background_spawn(async move {
             let filter = Filter::new()
@@ -415,8 +464,8 @@ impl NostrRegistry {
     fn get_messaging_relays(&mut self, cx: &mut Context<Self>) {
         let client = self.client();
         let async_identity = self.identity.downgrade();
-        let public_key = self.identity(cx).public_key();
-        let write_relays = self.gossip.read(cx).write_relays(&public_key);
+        let public_key = self.identity().read(cx).public_key();
+        let write_relays = self.write_relays(&public_key, cx);
 
         let task: Task<Result<RelayState, Error>> = cx.background_spawn(async move {
             let filter = Filter::new()
@@ -460,8 +509,8 @@ impl NostrRegistry {
     /// Continuously get gift wrap events for the current user in their messaging relays
     fn get_messages(&mut self, cx: &mut Context<Self>) {
         let client = self.client();
-        let public_key = self.identity(cx).public_key();
-        let messaging_relays = self.gossip.read(cx).messaging_relays(&public_key);
+        let public_key = self.identity().read(cx).public_key();
+        let messaging_relays = self.messaging_relays(&public_key, cx);
 
         cx.background_spawn(async move {
             let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
@@ -480,7 +529,7 @@ impl NostrRegistry {
     /// Publish an event to author's write relays
     pub fn publish(&self, event: Event, cx: &App) -> Task<Result<Output<EventId>, Error>> {
         let client = self.client();
-        let write_relays = self.gossip.read(cx).write_relays(&event.pubkey);
+        let write_relays = self.write_relays(&event.pubkey, cx);
 
         cx.background_spawn(async move { Ok(client.send_event_to(&write_relays, &event).await?) })
     }
@@ -491,7 +540,7 @@ impl NostrRegistry {
         I: Into<Vec<Kind>>,
     {
         let client = self.client();
-        let write_relays = self.gossip.read(cx).write_relays(&author);
+        let write_relays = self.write_relays(&author, cx);
 
         // Construct filters based on event kinds
         let filters: Vec<Filter> = kinds
