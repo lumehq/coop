@@ -11,6 +11,8 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use state::{tracker, NostrRegistry};
 
+use crate::NewMessage;
+
 const SEND_RETRY: usize = 10;
 
 #[derive(Debug, Clone)]
@@ -80,17 +82,21 @@ impl SendReport {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum RoomSignal {
-    NewMessage((EventId, UnsignedEvent)),
-    Refresh,
+/// Room event.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RoomEvent {
+    /// Incoming message.
+    Incoming(NewMessage),
+    /// Reloads the current room's messages.
+    Reload,
 }
 
+/// Room kind.
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum RoomKind {
-    Ongoing,
     #[default]
     Request,
+    Ongoing,
 }
 
 #[derive(Debug)]
@@ -133,7 +139,7 @@ impl Hash for Room {
 
 impl Eq for Room {}
 
-impl EventEmitter<RoomSignal> for Room {}
+impl EventEmitter<RoomEvent> for Room {}
 
 impl From<&UnsignedEvent> for Room {
     fn from(val: &UnsignedEvent) -> Self {
@@ -304,13 +310,13 @@ impl Room {
     }
 
     /// Emits a new message signal to the current room
-    pub fn emit_message(&self, id: EventId, event: UnsignedEvent, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::NewMessage((id, event)));
+    pub fn emit_message(&self, message: NewMessage, cx: &mut Context<Self>) {
+        cx.emit(RoomEvent::Incoming(message));
     }
 
-    /// Emits a signal to refresh the current room's messages.
+    /// Emits a signal to reload the current room's messages.
     pub fn emit_refresh(&mut self, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::Refresh);
+        cx.emit(RoomEvent::Reload);
     }
 
     /// Get gossip relays for each member

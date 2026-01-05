@@ -11,15 +11,16 @@ use flume::Sender;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task};
-pub use message::*;
 use nostr_sdk::prelude::*;
-pub use room::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::{tracker, NostrRegistry, GIFTWRAP_SUBSCRIPTION};
 
 mod message;
 mod room;
+
+pub use message::*;
+pub use room::*;
 
 pub fn init(cx: &mut App) {
     ChatRegistry::set_global(cx.new(ChatRegistry::new), cx);
@@ -42,17 +43,22 @@ pub struct ChatRegistry {
     _tasks: SmallVec<[Task<()>; 4]>,
 }
 
+/// Chat event.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChatEvent {
     OpenRoom(u64),
     CloseRoom(u64),
-    NewChatRequest(RoomKind),
+    NewRequest(RoomKind),
 }
 
+/// Channel signal.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Signal {
-    Loading(bool),
+enum Signal {
+    /// Message received from relay pool
     Message(NewMessage),
+    /// Loading status of the registry
+    Loading(bool),
+    /// Eose received from relay pool
     Eose,
 }
 
@@ -507,7 +513,6 @@ impl ChatRegistry {
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             let is_new_event = message.rumor.created_at > room.read(cx).created_at;
             let created_at = message.rumor.created_at;
-            let event_for_emit = message.rumor.clone();
 
             // Update room
             room.update(cx, |this, cx| {
@@ -521,7 +526,7 @@ impl ChatRegistry {
                 }
 
                 // Emit the new message to the room
-                this.emit_message(message.gift_wrap, event_for_emit.clone(), cx);
+                this.emit_message(message, cx);
             });
 
             // Resort all rooms in the registry by their created at (after updated)
@@ -533,7 +538,7 @@ impl ChatRegistry {
             self.add_room(cx.new(|_| Room::from(&message.rumor)), cx);
 
             // Notify the UI about the new room
-            cx.emit(ChatEvent::NewChatRequest(RoomKind::default()));
+            cx.emit(ChatEvent::NewRequest(RoomKind::default()));
         }
     }
 

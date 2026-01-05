@@ -84,7 +84,7 @@ impl Sidebar {
         subscriptions.push(
             // Subscribe for registry new events
             cx.subscribe_in(&chat, window, move |this, _, event, _window, cx| {
-                if let ChatEvent::NewChatRequest(kind) = event {
+                if let ChatEvent::NewRequest(kind) = event {
                     this.indicator.update(cx, |this, cx| {
                         *this = Some(kind.to_owned());
                         cx.notify();

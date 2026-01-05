@@ -6025,23 +6025,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "state_old"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "common",
- "gpui",
- "log",
- "nostr-lmdb",
- "nostr-sdk",
- "rustls",
- "serde",
- "serde_json",
- "smallvec",
- "smol",
-]
-
-[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

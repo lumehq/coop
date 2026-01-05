@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 pub use actions::*;
-use chat::{Message, RenderedMessage, Room, RoomKind, RoomSignal, SendReport};
+use chat::{Message, RenderedMessage, Room, RoomEvent, RoomKind, SendReport};
 use common::{nip96_upload, RenderedProfile, RenderedTimestamp};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -114,7 +114,7 @@ impl ChatPanel {
                 this.update_in(cx, |this, window, cx| {
                     match result {
                         Ok(events) => {
-                            this.insert_messages(events, cx);
+                            this.insert_messages(&events, cx);
                         }
                         Err(e) => {
                             window.push_notification(e.to_string(), cx);
@@ -142,18 +142,10 @@ impl ChatPanel {
             // Subscribe to room events
             cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
                 match signal {
-                    RoomSignal::NewMessage((gift_wrap_id, event)) => {
-                        let message = Message::user(event.clone());
-
-                        cx.spawn_in(window, async move |this, cx| {
-                            this.update_in(cx, |this, _window, cx| {
-                                this.insert_message(message, false, cx);
-                            })
-                            .ok();
-                        })
-                        .detach();
+                    RoomEvent::Incoming(message) => {
+                        this.insert_message(message, false, cx);
                     }
-                    RoomSignal::Refresh => {
+                    RoomEvent::Reload => {
                         this.load_messages(window, cx);
                     }
                 };
@@ -202,7 +194,7 @@ impl ChatPanel {
                 this.update_in(cx, |this, window, cx| {
                     match result {
                         Ok(events) => {
-                            this.insert_messages(events, cx);
+                            this.insert_messages(&events, cx);
                         }
                         Err(e) => {
                             window.push_notification(Notification::error(e.to_string()), cx);
@@ -278,14 +270,16 @@ impl ChatPanel {
 
             // Update the message list and reset the states
             this.update_in(cx, |this, window, cx| {
-                this.insert_message(Message::user(rumor), true, cx);
                 this.remove_all_replies(cx);
                 this.remove_all_attachments(cx);
+                // Reset the input to its default state
                 this.input.update(cx, |this, cx| {
                     this.set_loading(false, cx);
                     this.set_disabled(false, cx);
                     this.set_value("", window, cx);
                 });
+                // Update the message list
+                this.insert_message(&rumor, true, cx);
             })
             .ok();
         })
@@ -378,11 +372,10 @@ impl ChatPanel {
     }
 
     /// Convert and insert a vector of nostr events into the chat panel
-    fn insert_messages(&mut self, events: Vec<UnsignedEvent>, cx: &mut Context<Self>) {
-        for event in events {
-            let m = Message::user(event);
+    fn insert_messages(&mut self, events: &[UnsignedEvent], cx: &mut Context<Self>) {
+        for event in events.iter() {
             // Bulk inserting messages, so no need to scroll to the latest message
-            self.insert_message(m, false, cx);
+            self.insert_message(event, false, cx);
         }
     }
 
