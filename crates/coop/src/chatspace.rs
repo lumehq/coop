@@ -136,15 +136,20 @@ impl ChatSpace {
                     ChatEvent::OpenRoom(id) => {
                         if let Some(room) = chat.read(cx).room(id, cx) {
                             this.dock.update(cx, |this, cx| {
-                                let panel = chat_ui::init(room, window, cx);
-                                this.add_panel(Arc::new(panel), DockPlacement::Center, window, cx);
+                                this.add_panel(
+                                    Arc::new(chat_ui::init(room, window, cx)),
+                                    DockPlacement::Center,
+                                    window,
+                                    cx,
+                                );
                             });
                         }
                     }
                     ChatEvent::CloseRoom(..) => {
                         this.dock.update(cx, |this, cx| {
+                            // Force focus to the tab panel
                             this.focus_tab_panel(window, cx);
-
+                            // Dispatch the close panel action
                             cx.defer_in(window, |_, window, cx| {
                                 window.dispatch_action(Box::new(ClosePanel), cx);
                                 window.close_all_modals(cx);

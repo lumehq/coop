@@ -7,10 +7,10 @@ use common::{nip96_upload, RenderedProfile, RenderedTimestamp};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, AnyElement, App, AppContext,
-    ClipboardItem, Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
+    ClipboardItem, Context, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListAlignment, ListOffset, ListState, MouseButton, ObjectFit,
     ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Window,
+    StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, WeakEntity, Window,
 };
 use gpui_tokio::Tokio;
 use indexset::{BTreeMap, BTreeSet};
@@ -27,7 +27,6 @@ use ui::button::{Button, ButtonVariants};
 use ui::context_menu::ContextMenuExt;
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
-use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
 use ui::popup_menu::PopupMenuExt;
 use ui::{
@@ -43,39 +42,52 @@ mod emoji;
 mod subject;
 mod text;
 
-pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<ChatPanel> {
+pub fn init(room: WeakEntity<Room>, window: &mut Window, cx: &mut App) -> Entity<ChatPanel> {
     cx.new(|cx| ChatPanel::new(room, window, cx))
 }
 
+/// Chat Panel
 pub struct ChatPanel {
-    // Chat Room
-    room: Entity<Room>,
-
-    // Messages
-    list_state: ListState,
-    messages: BTreeSet<Message>,
-    rendered_texts_by_id: BTreeMap<EventId, RenderedText>,
-    reports_by_id: BTreeMap<EventId, Vec<SendReport>>,
-
-    // New Message
-    input: Entity<InputState>,
-    replies_to: Entity<HashSet<EventId>>,
-
-    // Media Attachment
-    attachments: Entity<Vec<Url>>,
-    uploading: bool,
-
-    // Panel
     id: SharedString,
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
 
-    _subscriptions: SmallVec<[Subscription; 3]>,
-    _tasks: SmallVec<[Task<()>; 2]>,
+    /// Chat Room
+    room: WeakEntity<Room>,
+
+    /// Message list state
+    list_state: ListState,
+
+    /// All messages
+    messages: BTreeSet<Message>,
+
+    /// Mapping message ids to their rendered texts
+    rendered_texts_by_id: BTreeMap<EventId, RenderedText>,
+
+    /// Mapping message ids to their reports
+    reports_by_id: BTreeMap<EventId, Vec<SendReport>>,
+
+    /// Input state
+    input: Entity<InputState>,
+
+    /// Replies to
+    replies_to: Entity<HashSet<EventId>>,
+
+    /// Media Attachment
+    attachments: Entity<Vec<Url>>,
+
+    /// Upload state
+    uploading: bool,
+
+    /// Async operations
+    tasks: SmallVec<[Task<()>; 2]>,
+
+    /// Event subscriptions
+    _subscriptions: SmallVec<[Subscription; 2]>,
 }
 
 impl ChatPanel {
-    pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(room: WeakEntity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("Message...")
@@ -87,43 +99,63 @@ impl ChatPanel {
         let attachments = cx.new(|_| vec![]);
         let replies_to = cx.new(|_| HashSet::new());
 
-        let id = room.read(cx).id.to_string().into();
         let messages = BTreeSet::from([Message::system()]);
         let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
 
-        let connect = room.read(cx).connect(cx);
-        let get_messages = room.read(cx).get_messages(cx);
+        let id: SharedString = room
+            .read_with(cx, |this, _cx| this.id.to_string().into())
+            .unwrap_or("Unknown".into());
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
 
-        tasks.push(
-            // Get messaging relays and encryption keys announcement for each member
-            cx.background_spawn(async move {
-                if let Err(e) = connect.await {
-                    log::error!("Failed to initialize room: {}", e);
-                }
-            }),
-        );
+        if let Ok(connect) = room.read_with(cx, |this, cx| this.connect(cx)) {
+            tasks.push(
+                // Get messaging relays and encryption keys announcement for each member
+                cx.background_spawn(async move {
+                    if let Err(e) = connect.await {
+                        log::error!("Failed to initialize room: {}", e);
+                    }
+                }),
+            );
+        };
 
-        tasks.push(
-            // Load all messages belonging to this room
-            cx.spawn_in(window, async move |this, cx| {
-                let result = get_messages.await;
+        if let Ok(get_messages) = room.read_with(cx, |this, cx| this.get_messages(cx)) {
+            tasks.push(
+                // Load all messages belonging to this room
+                cx.spawn_in(window, async move |this, cx| {
+                    let result = get_messages.await;
 
-                this.update_in(cx, |this, window, cx| {
-                    match result {
-                        Ok(events) => {
-                            this.insert_messages(&events, cx);
+                    this.update_in(cx, |this, window, cx| {
+                        match result {
+                            Ok(events) => {
+                                this.insert_messages(&events, cx);
+                            }
+                            Err(e) => {
+                                window.push_notification(e.to_string(), cx);
+                            }
+                        };
+                    })
+                    .ok();
+                }),
+            );
+        }
+
+        if let Some(room) = room.upgrade() {
+            subscriptions.push(
+                // Subscribe to room events
+                cx.subscribe_in(&room, window, move |this, _room, event, window, cx| {
+                    match event {
+                        RoomEvent::Incoming(message) => {
+                            this.insert_message(message, false, cx);
                         }
-                        Err(e) => {
-                            window.push_notification(e.to_string(), cx);
+                        RoomEvent::Reload => {
+                            this.load_messages(window, cx);
                         }
                     };
-                })
-                .ok();
-            }),
-        );
+                }),
+            );
+        }
 
         subscriptions.push(
             // Subscribe to input events
@@ -136,32 +168,6 @@ impl ChatPanel {
                     };
                 },
             ),
-        );
-
-        subscriptions.push(
-            // Subscribe to room events
-            cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
-                match signal {
-                    RoomEvent::Incoming(message) => {
-                        this.insert_message(message, false, cx);
-                    }
-                    RoomEvent::Reload => {
-                        this.load_messages(window, cx);
-                    }
-                };
-            }),
-        );
-
-        subscriptions.push(
-            // Observe when user close chat panel
-            cx.on_release_in(window, move |this, window, cx| {
-                this.messages.clear();
-                this.rendered_texts_by_id.clear();
-                this.reports_by_id.clear();
-                this.image_cache.update(cx, |this, cx| {
-                    this.clear(window, cx);
-                });
-            }),
         );
 
         Self {
@@ -178,17 +184,14 @@ impl ChatPanel {
             image_cache: RetainAllImageCache::new(cx),
             focus_handle: cx.focus_handle(),
             _subscriptions: subscriptions,
-            _tasks: tasks,
+            tasks,
         }
     }
 
     /// Load all messages belonging to this room
     fn load_messages(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let get_messages = self.room.read(cx).get_messages(cx);
-
-        self._tasks.push(
-            // Run the task in the background
-            cx.spawn_in(window, async move |this, cx| {
+        if let Ok(get_messages) = self.room.read_with(cx, |this, cx| this.get_messages(cx)) {
+            self.tasks.push(cx.spawn_in(window, async move |this, cx| {
                 let result = get_messages.await;
 
                 this.update_in(cx, |this, window, cx| {
@@ -202,12 +205,13 @@ impl ChatPanel {
                     };
                 })
                 .ok();
-            }),
-        );
+            }));
+        }
     }
 
     /// Get user input content and merged all attachments
     fn input_content(&self, cx: &Context<Self>) -> String {
+        // Get input's value
         let mut content = self.input.read(cx).value().trim().to_string();
 
         // Get all attaches and merge its with message
@@ -241,18 +245,13 @@ impl ChatPanel {
             return;
         }
 
-        // Temporary disable the message input
-        self.input.update(cx, |this, cx| {
-            this.set_loading(false, cx);
-            this.set_disabled(false, cx);
-            this.set_value("", window, cx);
-        });
+        // Get the current room entity
+        let Some(room) = self.room.upgrade().map(|this| this.read(cx)) else {
+            return;
+        };
 
         // Get replies_to if it's present
         let replies: Vec<EventId> = self.replies_to.read(cx).iter().copied().collect();
-
-        // Get the current room entity
-        let room = self.room.read(cx);
 
         // Create a temporary message for optimistic update
         let rumor = room.create_message(&content, replies.as_ref(), cx);
@@ -272,12 +271,14 @@ impl ChatPanel {
             this.update_in(cx, |this, window, cx| {
                 this.remove_all_replies(cx);
                 this.remove_all_attachments(cx);
+
                 // Reset the input to its default state
                 this.input.update(cx, |this, cx| {
                     this.set_loading(false, cx);
                     this.set_disabled(false, cx);
                     this.set_value("", window, cx);
                 });
+
                 // Update the message list
                 this.insert_message(&rumor, true, cx);
             })
@@ -285,16 +286,15 @@ impl ChatPanel {
         })
         .detach();
 
-        self._tasks.push(
-            // Continue sending the message in the background
-            cx.spawn_in(window, async move |this, cx| {
-                let result = send_message.await;
+        self.tasks.push(cx.spawn_in(window, async move |this, cx| {
+            let result = send_message.await;
 
-                this.update_in(cx, |this, window, cx| {
-                    match result {
-                        Ok(reports) => {
-                            // Update room's status
-                            this.room.update(cx, |this, cx| {
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(reports) => {
+                        // Update room's status
+                        this.room
+                            .update(cx, |this, cx| {
                                 if this.kind != RoomKind::Ongoing {
                                     // Update the room kind to ongoing,
                                     // but keep the room kind if send failed
@@ -303,50 +303,21 @@ impl ChatPanel {
                                         cx.notify();
                                     }
                                 }
-                            });
+                            })
+                            .ok();
 
-                            // Insert the sent reports
-                            this.reports_by_id.insert(rumor_id, reports);
+                        // Insert the sent reports
+                        this.reports_by_id.insert(rumor_id, reports);
 
-                            cx.notify();
-                        }
-                        Err(e) => {
-                            window.push_notification(e.to_string(), cx);
-                        }
+                        cx.notify();
                     }
-                })
-                .ok();
-            }),
-        );
-    }
-
-    /// Resend a failed message
-    #[allow(dead_code)]
-    fn resend_message(&mut self, id: &EventId, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(reports) = self.reports_by_id.get(id).cloned() {
-            let id_clone = id.to_owned();
-            let resend = self.room.read(cx).resend_message(reports, cx);
-
-            cx.spawn_in(window, async move |this, cx| {
-                let result = resend.await;
-
-                this.update_in(cx, |this, window, cx| {
-                    match result {
-                        Ok(reports) => {
-                            this.reports_by_id.entry(id_clone).and_modify(|this| {
-                                *this = reports;
-                            });
-                            cx.notify();
-                        }
-                        Err(e) => {
-                            window.push_notification(Notification::error(e.to_string()), cx);
-                        }
-                    };
-                })
-                .ok();
+                    Err(e) => {
+                        window.push_notification(e.to_string(), cx);
+                    }
+                }
             })
-            .detach();
-        }
+            .ok();
+        }));
     }
 
     /// Insert a message into the chat panel
@@ -379,13 +350,6 @@ impl ChatPanel {
         }
     }
 
-    /// Insert a warning message into the chat panel
-    #[allow(dead_code)]
-    fn insert_warning(&mut self, content: impl Into<String>, cx: &mut Context<Self>) {
-        let m = Message::warning(content.into());
-        self.insert_message(m, true, cx);
-    }
-
     /// Check if a message failed to send by its ID
     fn is_sent_failed(&self, id: &EventId) -> bool {
         self.reports_by_id
@@ -415,11 +379,6 @@ impl ChatPanel {
             }
             None
         })
-    }
-
-    fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Profile {
-        let persons = PersonRegistry::global(cx);
-        persons.read(cx).get_person(public_key, cx)
     }
 
     fn scroll_to(&self, id: EventId) {
@@ -545,6 +504,11 @@ impl ChatPanel {
             this.clear();
             cx.notify();
         });
+    }
+
+    fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Profile {
+        let persons = PersonRegistry::global(cx);
+        persons.read(cx).get_person(public_key, cx)
     }
 
     fn render_announcement(&self, ix: usize, cx: &Context<Self>) -> AnyElement {
@@ -1158,61 +1122,6 @@ impl ChatPanel {
 
         items
     }
-
-    fn subject_button(&self, cx: &App) -> Button {
-        let room = self.room.downgrade();
-        let subject = self
-            .room
-            .read(cx)
-            .subject
-            .as_ref()
-            .map(|subject| subject.to_string());
-
-        Button::new("subject")
-            .icon(IconName::Edit)
-            .tooltip("Change the subject of the conversation")
-            .on_click(move |_, window, cx| {
-                let view = subject::init(subject.clone(), window, cx);
-                let room = room.clone();
-                let weak_view = view.downgrade();
-
-                window.open_modal(cx, move |this, _window, _cx| {
-                    let room = room.clone();
-                    let weak_view = weak_view.clone();
-
-                    this.confirm()
-                        .title("Change the subject of the conversation")
-                        .child(view.clone())
-                        .button_props(ModalButtonProps::default().ok_text("Change"))
-                        .on_ok(move |_, _window, cx| {
-                            if let Ok(subject) =
-                                weak_view.read_with(cx, |this, cx| this.new_subject(cx))
-                            {
-                                room.update(cx, |this, cx| {
-                                    this.set_subject(subject, cx);
-                                })
-                                .ok();
-                            }
-                            // true to close the modal
-                            true
-                        })
-                });
-            })
-    }
-
-    fn reload_button(&self, _cx: &App) -> Button {
-        let room = self.room.downgrade();
-
-        Button::new("reload")
-            .icon(IconName::Refresh)
-            .tooltip("Reload")
-            .on_click(move |_ev, window, cx| {
-                _ = room.update(cx, |this, cx| {
-                    this.emit_refresh(cx);
-                    window.push_notification("Reloaded", cx);
-                });
-            })
-    }
 }
 
 impl Panel for ChatPanel {
@@ -1221,24 +1130,19 @@ impl Panel for ChatPanel {
     }
 
     fn title(&self, cx: &App) -> AnyElement {
-        self.room.read_with(cx, |this, cx| {
-            let proxy = AppSettings::get_proxy_user_avatars(cx);
-            let label = this.display_name(cx);
-            let url = this.display_image(proxy, cx);
+        self.room
+            .read_with(cx, |this, cx| {
+                let proxy = AppSettings::get_proxy_user_avatars(cx);
+                let label = this.display_name(cx);
+                let url = this.display_image(proxy, cx);
 
-            h_flex()
-                .gap_1p5()
-                .child(Avatar::new(url).size(rems(1.25)))
-                .child(label)
-                .into_any()
-        })
-    }
-
-    fn toolbar_buttons(&self, _window: &Window, cx: &App) -> Vec<Button> {
-        let subject_button = self.subject_button(cx);
-        let reload_button = self.reload_button(cx);
-
-        vec![subject_button, reload_button]
+                h_flex()
+                    .gap_1p5()
+                    .child(Avatar::new(url).size(rems(1.25)))
+                    .child(label)
+                    .into_any_element()
+            })
+            .unwrap_or(div().child("Unknown").into_any_element())
     }
 }
 

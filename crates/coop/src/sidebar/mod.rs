@@ -6,8 +6,8 @@ use chat::{ChatEvent, ChatRegistry, Room, RoomKind};
 use common::{DebouncedDelay, RenderedTimestamp, TextUtils, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    deferred, div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
+    deferred, div, relative, uniform_list, App, AppContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
     RetainAllImageCache, SharedString, Styled, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
@@ -34,6 +34,7 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     cx.new(|cx| Sidebar::new(window, cx))
 }
 
+/// Sidebar.
 pub struct Sidebar {
     name: SharedString,
 
@@ -49,73 +50,75 @@ pub struct Sidebar {
     /// Async search operation
     search_task: Option<Task<()>>,
 
+    /// Search input state
     find_input: Entity<InputState>,
+
+    /// Debounced delay for search input
     find_debouncer: DebouncedDelay<Self>,
+
+    /// Whether searching is in progress
     finding: bool,
 
-    indicator: Entity<Option<RoomKind>>,
+    /// New request flag
+    new_request: bool,
+
+    /// Current chat room filter
     active_filter: Entity<RoomKind>,
 
     /// Event subscriptions
-    _subscriptions: SmallVec<[Subscription; 3]>,
+    _subscriptions: SmallVec<[Subscription; 2]>,
 }
 
 impl Sidebar {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let active_filter = cx.new(|_| RoomKind::Ongoing);
-        let indicator = cx.new(|_| None);
         let search_results = cx.new(|_| None);
 
-        let find_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
+        // Define the find input state
+        let find_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Find or start a conversation")
+                .clean_on_escape()
+        });
 
+        // Get the chat registry
         let chat = ChatRegistry::global(cx);
+
         let mut subscriptions = smallvec![];
 
         subscriptions.push(
-            // Clear the image cache when sidebar is closed
-            cx.on_release_in(window, move |this, window, cx| {
-                this.image_cache.update(cx, |this, cx| {
-                    this.clear(window, cx);
-                })
-            }),
-        );
-
-        subscriptions.push(
             // Subscribe for registry new events
-            cx.subscribe_in(&chat, window, move |this, _, event, _window, cx| {
-                if let ChatEvent::NewRequest(kind) = event {
-                    this.indicator.update(cx, |this, cx| {
-                        *this = Some(kind.to_owned());
-                        cx.notify();
-                    });
-                }
+            cx.subscribe_in(&chat, window, move |this, _s, event, _window, cx| {
+                if event == &ChatEvent::Ping {
+                    this.new_request = true;
+                    cx.notify();
+                };
             }),
         );
 
         subscriptions.push(
             // Subscribe for find input events
             cx.subscribe_in(&find_input, window, |this, state, event, window, cx| {
+                let delay = Duration::from_millis(FIND_DELAY);
+
                 match event {
                     InputEvent::PressEnter { .. } => {
                         this.search(window, cx);
                     }
                     InputEvent::Change => {
-                        // Clear the result when input is empty
                         if state.read(cx).value().is_empty() {
+                            // Clear the result when input is empty
                             this.clear(window, cx);
                         } else {
                             // Run debounced search
-                            this.find_debouncer.fire_new(
-                                Duration::from_millis(FIND_DELAY),
-                                window,
-                                cx,
-                                |this, window, cx| this.debounced_search(window, cx),
-                            );
+                            this.find_debouncer
+                                .fire_new(delay, window, cx, |this, window, cx| {
+                                    this.debounced_search(window, cx)
+                                });
                         }
                     }
                     _ => {}
-                }
+                };
             }),
         );
 
@@ -125,7 +128,7 @@ impl Sidebar {
             image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
             finding: false,
-            indicator,
+            new_request: false,
             active_filter,
             find_input,
             search_results,
@@ -384,13 +387,13 @@ impl Sidebar {
     }
 
     fn set_finding(&mut self, status: bool, _window: &mut Window, cx: &mut Context<Self>) {
-        self.finding = status;
         // Disable the input to prevent duplicate requests
         self.find_input.update(cx, |this, cx| {
             this.set_disabled(status, cx);
             this.set_loading(status, cx);
         });
-
+        // Set the finding status
+        self.finding = status;
         cx.notify();
     }
 
@@ -412,47 +415,46 @@ impl Sidebar {
     }
 
     fn set_filter(&mut self, kind: RoomKind, cx: &mut Context<Self>) {
-        self.indicator.update(cx, |this, cx| {
-            *this = None;
-            cx.notify();
-        });
         self.active_filter.update(cx, |this, cx| {
             *this = kind;
             cx.notify();
         });
+        self.new_request = false;
+        cx.notify();
     }
 
-    fn open_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+    fn open(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let chat = ChatRegistry::global(cx);
-        let room = if let Some(room) = chat.read(cx).room(&id, cx) {
-            room
-        } else {
-            let Some(result) = self.search_results.read(cx).as_ref() else {
-                window.push_notification("Failed to open room. Please try again later.", cx);
-                return;
-            };
 
-            let Some(room) = result.iter().find(|this| this.read(cx).id == id).cloned() else {
-                window.push_notification("Failed to open room. Please try again later.", cx);
-                return;
-            };
-
-            // Clear all search results
-            self.clear(window, cx);
-
-            room
-        };
-
-        chat.update(cx, |this, cx| {
-            this.push_room(room, cx);
-        });
+        match chat.read(cx).room(&id, cx) {
+            Some(room) => {
+                chat.update(cx, |this, cx| {
+                    this.emit_room(room, cx);
+                });
+            }
+            None => {
+                if let Some(room) = self
+                    .search_results
+                    .read(cx)
+                    .as_ref()
+                    .and_then(|results| results.iter().find(|this| this.read(cx).id == id))
+                    .map(|this| this.downgrade())
+                {
+                    chat.update(cx, |this, cx| {
+                        this.emit_room(room, cx);
+                    });
+                    // Clear all search results
+                    self.clear(window, cx);
+                }
+            }
+        }
     }
 
     fn on_reload(&mut self, _ev: &Reload, window: &mut Window, cx: &mut Context<Self>) {
         ChatRegistry::global(cx).update(cx, |this, cx| {
             this.get_rooms(cx);
         });
-        window.push_notification("Refreshed", cx);
+        window.push_notification("Reload", cx);
     }
 
     fn on_manage(&mut self, _ev: &RelayStatus, window: &mut Window, cx: &mut Context<Self>) {
@@ -553,7 +555,7 @@ impl Sidebar {
 
             let handler = cx.listener({
                 move |this, _, window, cx| {
-                    this.open_room(room_id, window, cx);
+                    this.open(room_id, window, cx);
                 }
             });
 
@@ -576,10 +578,6 @@ impl Sidebar {
 impl Panel for Sidebar {
     fn panel_id(&self) -> SharedString {
         self.name.clone()
-    }
-
-    fn title(&self, _cx: &App) -> AnyElement {
-        self.name.clone().into_any_element()
     }
 }
 
@@ -672,13 +670,6 @@ impl Render for Sidebar {
                                 Button::new("all")
                                     .label("All")
                                     .tooltip("All ongoing conversations")
-                                    .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
-                                        this.when(kind == &RoomKind::Ongoing, |this| {
-                                            this.child(
-                                                div().size_1().rounded_full().bg(cx.theme().cursor),
-                                            )
-                                        })
-                                    })
                                     .small()
                                     .cta()
                                     .bold()
@@ -693,12 +684,10 @@ impl Render for Sidebar {
                                 Button::new("requests")
                                     .label("Requests")
                                     .tooltip("Incoming new conversations")
-                                    .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
-                                        this.when(kind != &RoomKind::Ongoing, |this| {
-                                            this.child(
-                                                div().size_1().rounded_full().bg(cx.theme().cursor),
-                                            )
-                                        })
+                                    .when(self.new_request, |this| {
+                                        this.child(
+                                            div().size_1().rounded_full().bg(cx.theme().cursor),
+                                        )
                                     })
                                     .small()
                                     .cta()

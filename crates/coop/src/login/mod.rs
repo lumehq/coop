@@ -210,12 +210,10 @@ impl Login {
 
     fn connect(&mut self, signer: NostrConnect, cx: &mut Context<Self>) {
         let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
 
-        cx.background_spawn(async move {
-            client.set_signer(signer).await;
-        })
-        .detach();
+        nostr.update(cx, |this, cx| {
+            this.set_signer(signer, cx);
+        });
     }
 
     pub fn login_with_password(&mut self, content: &str, pwd: &str, cx: &mut Context<Self>) {
@@ -260,10 +258,6 @@ impl Login {
 
     pub fn login_with_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
         let keystore = KeyStore::global(cx).read(cx).backend();
-
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let username = keys.public_key().to_hex();
         let secret = keys.secret_key().to_secret_hex().into_bytes();
 
@@ -281,11 +275,14 @@ impl Login {
                 .ok();
             }
 
-            // Update the signer
-            cx.background_spawn(async move {
-                client.set_signer(keys).await;
+            this.update(cx, |_this, cx| {
+                let nostr = NostrRegistry::global(cx);
+
+                nostr.update(cx, |this, cx| {
+                    this.set_signer(keys, cx);
+                });
             })
-            .detach();
+            .ok();
         })
         .detach();
     }

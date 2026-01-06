@@ -324,7 +324,8 @@ impl Compose {
         };
 
         chat.update(cx, |this, cx| {
-            this.push_room(cx.new(|_| Room::new(subject, public_key, receivers)), cx);
+            let room = cx.new(|_| Room::new(subject, public_key, receivers));
+            this.emit_room(room.downgrade(), cx);
         });
 
         window.close_modal(cx);
