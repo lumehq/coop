@@ -214,7 +214,10 @@ impl NostrRegistry {
         while let Ok(notification) = notifications.recv().await {
             if let RelayPoolNotification::Message { message, relay_url } = notification {
                 match message {
-                    RelayMessage::Event { event, .. } => {
+                    RelayMessage::Event {
+                        event,
+                        subscription_id,
+                    } => {
                         if !processed_events.insert(event.id) {
                             // Skip if the event has already been processed
                             continue;
@@ -222,6 +225,11 @@ impl NostrRegistry {
 
                         match event.kind {
                             Kind::RelayList => {
+                                // Automatically get messaging relays for each member when the user opens a room
+                                if subscription_id.as_str().starts_with("room-") {
+                                    Self::get_messaging_relays_by(client, event.as_ref()).await?;
+                                }
+
                                 tx.send_async(event.into_owned()).await?;
                             }
                             Kind::InboxRelays => {
@@ -249,6 +257,45 @@ impl NostrRegistry {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    /// Automatically get messaging relays from a received relay list
+    async fn get_messaging_relays_by(client: &Client, event: &Event) -> Result<(), Error> {
+        // Subscription options
+        let opts = SubscribeAutoCloseOptions::default()
+            .timeout(Some(Duration::from_secs(TIMEOUT)))
+            .exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        // Extract write relays from event
+        let write_relays: Vec<&RelayUrl> = nip65::extract_relay_list(event)
+            .filter_map(|(url, metadata)| {
+                if metadata.is_none() || metadata == &Some(RelayMetadata::Write) {
+                    Some(url)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Ensure relay connections
+        for relay in write_relays.iter() {
+            client.add_write_relay(*relay).await?;
+            client.connect_relay(*relay).await?;
+        }
+
+        // Construct filter for inbox relays
+        let filter = Filter::new()
+            .kind(Kind::InboxRelays)
+            .author(event.pubkey)
+            .limit(1);
+
+        client
+            .subscribe_to(write_relays, vec![filter], Some(opts))
+            .await?;
+
+        log::info!("Getting inbox relays for: {}", event.pubkey);
 
         Ok(())
     }
@@ -308,7 +355,7 @@ impl NostrRegistry {
         // Ensure relay connections
         cx.background_spawn(async move {
             for url in async_relays.iter() {
-                client.add_relay(url).await.ok();
+                client.add_write_relay(url).await.ok();
                 client.connect_relay(url).await.ok();
             }
         })
@@ -326,7 +373,7 @@ impl NostrRegistry {
         // Ensure relay connections
         cx.background_spawn(async move {
             for url in async_relays.iter() {
-                client.add_relay(url).await.ok();
+                client.add_read_relay(url).await.ok();
                 client.connect_relay(url).await.ok();
             }
         })

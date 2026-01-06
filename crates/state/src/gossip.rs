@@ -69,6 +69,8 @@ impl Gossip {
                 })
                 .take(3),
         );
+
+        log::info!("Updating gossip relays for: {}", event.pubkey);
     }
 
     /// Get messaging relays for a given public key
@@ -99,5 +101,7 @@ impl Gossip {
                     })
                     .take(3),
             );
+
+        log::info!("Updating messaging relays for: {}", event.pubkey);
     }
 }

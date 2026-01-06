@@ -324,11 +324,16 @@ impl Room {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
         let members = self.members();
+        let id = SubscriptionId::new(format!("room-{}", self.id));
 
         cx.background_spawn(async move {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
-            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+            // Subscription options
+            let opts = SubscribeAutoCloseOptions::default()
+                .timeout(Some(Duration::from_secs(2)))
+                .exit_policy(ReqExitPolicy::ExitOnEOSE);
 
             for member in members.into_iter() {
                 if member == public_key {
@@ -339,7 +344,9 @@ impl Room {
                 let filter = Filter::new().kind(Kind::RelayList).author(member).limit(1);
 
                 // Subscribe to get member's gossip relays
-                client.subscribe(filter, Some(opts)).await?;
+                client
+                    .subscribe_with_id(id.clone(), filter, Some(opts))
+                    .await?;
             }
 
             Ok(())

@@ -100,10 +100,10 @@ impl RelayAuth {
 
                     if auto_auth && is_authenticated {
                         // Automatically authenticate if the relay is authenticated before
-                        this.response(req.to_owned(), window, cx);
+                        this.response(req, window, cx);
                     } else {
                         // Otherwise open the auth request popup
-                        this.ask_for_approval(req.to_owned(), window, cx);
+                        this.ask_for_approval(req, window, cx);
                     }
                 }
             }),
@@ -111,9 +111,7 @@ impl RelayAuth {
 
         tasks.push(
             // Handle nostr notifications
-            cx.background_spawn(async move {
-                Self::handle_notifications(&client, &tx).await;
-            }),
+            cx.background_spawn(async move { Self::handle_notifications(&client, &tx).await }),
         );
 
         tasks.push(
@@ -138,7 +136,6 @@ impl RelayAuth {
     // Handle nostr notifications
     async fn handle_notifications(client: &Client, tx: &flume::Sender<AuthRequest>) {
         let mut notifications = client.notifications();
-        let mut processed_challenges = HashSet::new();
 
         while let Ok(notification) = notifications.recv().await {
             if let RelayPoolNotification::Message {
@@ -146,10 +143,11 @@ impl RelayAuth {
                 relay_url,
             } = notification
             {
-                if processed_challenges.insert(challenge.clone()) {
-                    let request = AuthRequest::new(challenge, relay_url);
-                    tx.send_async(request).await.ok();
-                };
+                let request = AuthRequest::new(challenge, relay_url);
+
+                if let Err(e) = tx.send_async(request).await {
+                    log::error!("Failed to send auth request: {}", e);
+                }
             }
         }
     }
