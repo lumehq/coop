@@ -313,12 +313,13 @@ impl RelayAuth {
                         move |_ev, window, cx| {
                             // Set loading state to true
                             loading.set(true);
+
                             // Process to approve the request
                             entity
                                 .update(cx, |this, cx| {
                                     this.response(req.clone(), window, cx);
                                 })
-                                .expect("Entity has been released");
+                                .ok();
                         }
                     })
             });
@@ -326,9 +327,7 @@ impl RelayAuth {
         // Push the notification to the current window
         window.push_notification(note, cx);
 
-        // Focus the window if it's not active
-        if !window.is_window_hovered() {
-            window.activate_window();
-        }
+        // Bring the window to the front
+        cx.activate(true);
     }
 }

@@ -259,7 +259,7 @@ impl ChatSpace {
                                     match result {
                                         Ok(profile) => {
                                             persons.update(cx, |this, cx| {
-                                                this.insert_or_update_person(profile, cx);
+                                                this.insert(profile, cx);
                                                 // Close the edit profile modal
                                                 window.close_all_modals(cx);
                                             });
@@ -545,7 +545,7 @@ impl ChatSpace {
             })
             .when_some(identity.read(cx).option_public_key(), |this, public_key| {
                 let persons = PersonRegistry::global(cx);
-                let profile = persons.read(cx).get_person(&public_key, cx);
+                let profile = persons.read(cx).get(&public_key, cx);
 
                 let keystore = KeyStore::global(cx);
                 let is_using_file_keystore = keystore.read(cx).is_using_file_keystore();

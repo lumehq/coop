@@ -369,7 +369,7 @@ impl Compose {
             };
 
             let public_key = contact.public_key;
-            let profile = persons.read(cx).get_person(&public_key, cx);
+            let profile = persons.read(cx).get(&public_key, cx);
 
             items.push(
                 h_flex()

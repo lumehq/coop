@@ -278,7 +278,7 @@ impl Room {
             .or_else(|| self.members.first())
             .expect("Room should have at least one member");
 
-        persons.read(cx).get_person(target_member, cx)
+        persons.read(cx).get(target_member, cx)
     }
 
     /// Merge the names of the first two members of the room.
@@ -289,7 +289,7 @@ impl Room {
             let profiles: Vec<Profile> = self
                 .members
                 .iter()
-                .map(|public_key| persons.read(cx).get_person(public_key, cx))
+                .map(|public_key| persons.read(cx).get(public_key, cx))
                 .collect();
 
             let mut name = profiles

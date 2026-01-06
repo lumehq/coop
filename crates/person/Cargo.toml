@@ -11,7 +11,7 @@ state = { path = "../state" }
 gpui.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
-itertools.workspace = true
 smallvec.workspace = true
 smol.workspace = true
+flume.workspace = true
 log.workspace = true

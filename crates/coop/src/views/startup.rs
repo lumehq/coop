@@ -205,9 +205,7 @@ impl Render for Startup {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         let persons = PersonRegistry::global(cx);
         let bunker = self.credential.secret().starts_with("bunker://");
-        let profile = persons
-            .read(cx)
-            .get_person(&self.credential.public_key(), cx);
+        let profile = persons.read(cx).get(&self.credential.public_key(), cx);
 
         v_flex()
             .image_cache(self.image_cache.clone())

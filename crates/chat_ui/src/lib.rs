@@ -508,7 +508,7 @@ impl ChatPanel {
 
     fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Profile {
         let persons = PersonRegistry::global(cx);
-        persons.read(cx).get_person(public_key, cx)
+        persons.read(cx).get(public_key, cx)
     }
 
     fn render_announcement(&self, ix: usize, cx: &Context<Self>) -> AnyElement {
@@ -795,7 +795,7 @@ impl ChatPanel {
 
     fn render_report(report: &SendReport, cx: &App) -> impl IntoElement {
         let persons = PersonRegistry::global(cx);
-        let profile = persons.read(cx).get_person(&report.receiver, cx);
+        let profile = persons.read(cx).get(&report.receiver, cx);
         let name = profile.display_name();
         let avatar = profile.avatar(true);
 
@@ -1057,7 +1057,7 @@ impl ChatPanel {
     fn render_reply(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
         if let Some(text) = self.message(id) {
             let persons = PersonRegistry::global(cx);
-            let profile = persons.read(cx).get_person(&text.author, cx);
+            let profile = persons.read(cx).get(&text.author, cx);
 
             div()
                 .w_full()

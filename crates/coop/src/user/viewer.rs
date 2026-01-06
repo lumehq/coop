@@ -44,7 +44,7 @@ impl ProfileViewer {
         let client = nostr.read(cx).client();
 
         let persons = PersonRegistry::global(cx);
-        let profile = persons.read(cx).get_person(&target, cx);
+        let profile = persons.read(cx).get(&target, cx);
 
         let mut tasks = smallvec![];
 

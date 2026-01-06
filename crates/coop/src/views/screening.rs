@@ -37,7 +37,7 @@ impl Screening {
         let client = nostr.read(cx).client();
 
         let persons = PersonRegistry::global(cx);
-        let profile = persons.read(cx).get_person(&public_key, cx);
+        let profile = persons.read(cx).get(&public_key, cx);
 
         let mut tasks = smallvec![];
 
