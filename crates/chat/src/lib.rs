@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context as AnyhowContext, Error};
-use common::{EventUtils, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT};
+use common::EventUtils;
 use flume::Sender;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
@@ -154,7 +154,6 @@ impl ChatRegistry {
         let subscription_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
 
         let mut notifications = client.notifications();
-        let mut public_keys = HashSet::new();
         let mut processed_events = HashSet::new();
 
         while let Ok(notification) = notifications.recv().await {
@@ -177,41 +176,26 @@ impl ChatRegistry {
 
                     // Extract the rumor from the gift wrap event
                     match Self::extract_rumor(client, event.as_ref()).await {
-                        Ok(rumor) => {
-                            // Get all public keys
-                            public_keys.extend(rumor.all_pubkeys());
+                        Ok(rumor) => match rumor.created_at >= initialized_at {
+                            true => {
+                                let sent_by_coop = {
+                                    let tracker = tracker().read().await;
+                                    tracker.is_sent_by_coop(&event.id)
+                                };
 
-                            let limit_reached = public_keys.len() >= METADATA_BATCH_LIMIT;
-                            let done = !loading.load(Ordering::Acquire) && !public_keys.is_empty();
+                                if !sent_by_coop {
+                                    let new_message = NewMessage::new(event.id, rumor);
+                                    let signal = NostrEvent::Message(new_message);
 
-                            // Get metadata for all public keys if the limit is reached
-                            if limit_reached || done {
-                                let public_keys = std::mem::take(&mut public_keys);
-                                // Get metadata for the public keys
-                                Self::get_metadata(client, public_keys).await.ok();
-                            }
-
-                            match rumor.created_at >= initialized_at {
-                                true => {
-                                    let sent_by_coop = {
-                                        let tracker = tracker().read().await;
-                                        tracker.is_sent_by_coop(&event.id)
-                                    };
-
-                                    if !sent_by_coop {
-                                        let new_message = NewMessage::new(event.id, rumor);
-                                        let signal = NostrEvent::Message(new_message);
-
-                                        if let Err(e) = tx.send_async(signal).await {
-                                            log::error!("Failed to send signal: {}", e);
-                                        }
+                                    if let Err(e) = tx.send_async(signal).await {
+                                        log::error!("Failed to send signal: {}", e);
                                     }
                                 }
-                                false => {
-                                    loading.store(true, Ordering::Release);
-                                }
                             }
-                        }
+                            false => {
+                                loading.store(true, Ordering::Release);
+                            }
+                        },
                         Err(e) => {
                             log::warn!("Failed to unwrap gift wrap event: {}", e);
                         }
@@ -230,7 +214,7 @@ impl ChatRegistry {
     }
 
     async fn unwrapping_status(client: &Client, status: &Arc<AtomicBool>, tx: &Sender<NostrEvent>) {
-        let loop_duration = Duration::from_secs(20);
+        let loop_duration = Duration::from_secs(12);
         let mut is_start_processing = false;
         let mut total_loops = 0;
 
@@ -240,22 +224,16 @@ impl ChatRegistry {
 
                 if status.load(Ordering::Acquire) {
                     is_start_processing = true;
-
                     // Reset gift wrap processing flag
                     _ = status.compare_exchange(true, false, Ordering::Release, Ordering::Relaxed);
 
-                    // Send loading signal
-                    if let Err(e) = tx.send_async(NostrEvent::Unwrapping(true)).await {
-                        log::error!("Failed to send signal: {}", e);
-                    }
+                    tx.send_async(NostrEvent::Unwrapping(true)).await.ok();
                 } else {
                     // Only run further if we are already processing
                     // Wait until after 2 loops to prevent exiting early while events are still being processed
                     if is_start_processing && total_loops >= 2 {
-                        // Send loading signal
-                        if let Err(e) = tx.send_async(NostrEvent::Unwrapping(false)).await {
-                            log::error!("Failed to send signal: {}", e);
-                        }
+                        tx.send_async(NostrEvent::Unwrapping(false)).await.ok();
+
                         // Reset the counter
                         is_start_processing = false;
                         total_loops = 0;
@@ -652,33 +630,6 @@ impl ChatRegistry {
         } else {
             Err(anyhow!("Event is not cached yet."))
         }
-    }
-
-    /// Get metadata for a list of public keys
-    async fn get_metadata<I>(client: &Client, public_keys: I) -> Result<(), Error>
-    where
-        I: IntoIterator<Item = PublicKey>,
-    {
-        let authors: Vec<PublicKey> = public_keys.into_iter().collect();
-        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-        let kinds = vec![Kind::Metadata, Kind::ContactList];
-
-        // Return if the list is empty
-        if authors.is_empty() {
-            return Err(anyhow!("You need at least one public key".to_string(),));
-        }
-
-        let filter = Filter::new()
-            .limit(authors.len() * kinds.len())
-            .authors(authors)
-            .kinds(kinds);
-
-        // Subscribe to filters to the bootstrap relays
-        client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-            .await?;
-
-        Ok(())
     }
 
     /// Get the conversation ID for a given rumor (message).

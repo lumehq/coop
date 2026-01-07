@@ -1,5 +1,7 @@
 use nostr_sdk::prelude::*;
 
+use crate::Announcement;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RelayState {
     #[default]
@@ -19,6 +21,9 @@ pub struct Identity {
     /// The public key of the account
     public_key: Option<PublicKey>,
 
+    /// Encryption key announcement
+    announcement: Option<Announcement>,
+
     /// Status of the current user NIP-65 relays
     relay_list: RelayState,
 
@@ -36,6 +41,7 @@ impl Identity {
     pub fn new() -> Self {
         Self {
             public_key: None,
+            announcement: None,
             relay_list: RelayState::default(),
             messaging_relays: RelayState::default(),
         }

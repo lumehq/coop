@@ -1,9 +1,14 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+use std::time::Duration;
 
+use anyhow::{anyhow, Error};
+use common::{EventUtils, BOOTSTRAP_RELAYS};
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::{NostrRegistry, TIMEOUT};
 
 pub fn init(cx: &mut App) {
     PersonRegistry::set_global(cx.new(PersonRegistry::new), cx);
@@ -19,8 +24,14 @@ pub struct PersonRegistry {
     /// Collection of all persons (user profiles)
     persons: HashMap<PublicKey, Entity<Profile>>,
 
+    /// Set of public keys that have been seen
+    seen: Rc<RefCell<HashSet<PublicKey>>>,
+
+    /// Sender for requesting metadata
+    sender: flume::Sender<PublicKey>,
+
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 3]>,
+    _tasks: SmallVec<[Task<()>; 4]>,
 }
 
 impl PersonRegistry {
@@ -41,6 +52,7 @@ impl PersonRegistry {
 
         // Channel for communication between nostr and gpui
         let (tx, rx) = flume::bounded::<Profile>(100);
+        let (mta_tx, mta_rx) = flume::bounded::<PublicKey>(100);
 
         let mut tasks = smallvec![];
 
@@ -49,7 +61,20 @@ impl PersonRegistry {
             cx.background_spawn({
                 let client = client.clone();
 
-                async move { Self::handle_notifications(&client, &tx).await }
+                async move {
+                    Self::handle_notifications(&client, &tx).await;
+                }
+            }),
+        );
+
+        tasks.push(
+            // Handle metadata requests
+            cx.background_spawn({
+                let client = client.clone();
+
+                async move {
+                    Self::handle_requests(&client, &mta_rx).await;
+                }
             }),
         );
 
@@ -89,6 +114,8 @@ impl PersonRegistry {
 
         Self {
             persons: HashMap::new(),
+            seen: Rc::new(RefCell::new(HashSet::new())),
+            sender: mta_tx,
             _tasks: tasks,
         }
     }
@@ -110,15 +137,80 @@ impl PersonRegistry {
                     continue;
                 }
 
-                // Only process metadata events
-                if event.kind == Kind::Metadata {
-                    let metadata = Metadata::from_json(&event.content).unwrap_or_default();
-                    let profile = Profile::new(event.pubkey, metadata);
+                match event.kind {
+                    Kind::Metadata => {
+                        let metadata = Metadata::from_json(&event.content).unwrap_or_default();
+                        let profile = Profile::new(event.pubkey, metadata);
 
-                    tx.send_async(profile).await.ok();
-                };
+                        tx.send_async(profile).await.ok();
+                    }
+                    Kind::ContactList => {
+                        let public_keys = event.extract_public_keys();
+
+                        Self::get_metadata(client, public_keys).await.ok();
+                    }
+                    _ => {}
+                }
             }
         }
+    }
+
+    /// Handle request for metadata
+    async fn handle_requests(client: &Client, rx: &flume::Receiver<PublicKey>) {
+        let mut batch: HashSet<PublicKey> = HashSet::new();
+
+        loop {
+            match flume::Selector::new()
+                .recv(rx, |result| result.ok())
+                .wait_timeout(Duration::from_secs(2))
+            {
+                Ok(Some(public_key)) => {
+                    log::info!("Received public key: {}", public_key);
+                    batch.insert(public_key);
+                    // Process the batch if it's full
+                    if batch.len() >= 20 {
+                        Self::get_metadata(client, std::mem::take(&mut batch))
+                            .await
+                            .ok();
+                    }
+                }
+                _ => {
+                    Self::get_metadata(client, std::mem::take(&mut batch))
+                        .await
+                        .ok();
+                }
+            }
+        }
+    }
+
+    /// Get metadata for all public keys in a event
+    async fn get_metadata<I>(client: &Client, public_keys: I) -> Result<(), Error>
+    where
+        I: IntoIterator<Item = PublicKey>,
+    {
+        let authors: Vec<PublicKey> = public_keys.into_iter().collect();
+        let limit = authors.len();
+
+        if authors.is_empty() {
+            return Err(anyhow!("You need at least one public key"));
+        }
+
+        // Construct the subscription option
+        let opts = SubscribeAutoCloseOptions::default()
+            .exit_policy(ReqExitPolicy::ExitOnEOSE)
+            .timeout(Some(Duration::from_secs(TIMEOUT)));
+
+        // Construct the filter for metadata
+        let filter = Filter::new()
+            .kind(Kind::Metadata)
+            .authors(authors)
+            .limit(limit);
+
+        client
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+            .await?;
+
+        Ok(())
     }
 
     /// Load all user profiles from the database
@@ -165,10 +257,26 @@ impl PersonRegistry {
 
     /// Get single person by public key
     pub fn get(&self, public_key: &PublicKey, cx: &App) -> Profile {
-        self.persons
-            .get(public_key)
-            .map(|e| e.read(cx))
-            .cloned()
-            .unwrap_or(Profile::new(public_key.to_owned(), Metadata::default()))
+        if let Some(profile) = self.persons.get(public_key) {
+            return profile.read(cx).clone();
+        }
+
+        let public_key = *public_key;
+        let mut seen = self.seen.borrow_mut();
+
+        if seen.insert(public_key) {
+            let sender = self.sender.clone();
+
+            // Spawn background task to request metadata
+            cx.background_spawn(async move {
+                if let Err(e) = sender.send_async(public_key).await {
+                    log::warn!("Failed to send public key for metadata request: {}", e);
+                }
+            })
+            .detach();
+        }
+
+        // Return a temporary profile with default metadata
+        Profile::new(public_key, Metadata::default())
     }
 }

@@ -147,7 +147,7 @@ impl From<&UnsignedEvent> for Room {
         let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members = val.all_pubkeys();
+        let members = val.extract_public_keys();
 
         // Get subject from tags
         let subject = val
@@ -228,16 +228,25 @@ impl Room {
     }
 
     /// Returns the members of the room with their messaging relays
-    pub fn members_with_relays(&self, cx: &App) -> Vec<(PublicKey, Vec<RelayUrl>)> {
+    pub fn members_with_relays(&self, cx: &App) -> Task<Vec<(PublicKey, Vec<RelayUrl>)>> {
         let nostr = NostrRegistry::global(cx);
-        let mut result = vec![];
+        let mut tasks = vec![];
 
         for member in self.members.iter() {
-            let messaging_relays = nostr.read(cx).messaging_relays(member, cx);
-            result.push((member.to_owned(), messaging_relays));
+            let task = nostr.read(cx).messaging_relays(member, cx);
+            tasks.push((*member, task));
         }
 
-        result
+        cx.background_spawn(async move {
+            let mut results = vec![];
+
+            for (public_key, task) in tasks.into_iter() {
+                let urls = task.await;
+                results.push((public_key, urls));
+            }
+
+            results
+        })
     }
 
     /// Checks if the room has more than two members (group)
@@ -457,10 +466,12 @@ impl Room {
         let rumor = rumor.to_owned();
 
         // Get all members and their messaging relays
-        let mut members = self.members_with_relays(cx);
+        let task = self.members_with_relays(cx);
 
         cx.background_spawn(async move {
             let signer = client.signer().await?;
+            let current_user_relays = current_user_relays.await;
+            let mut members = task.await;
 
             // Remove the current user's public key from the list of receivers
             // the current user will be handled separately

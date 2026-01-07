@@ -7,10 +7,12 @@ use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_lmdb::NostrLmdb;
 use nostr_sdk::prelude::*;
 
+mod device;
 mod event;
 mod gossip;
 mod identity;
 
+pub use device::*;
 pub use event::*;
 pub use gossip::*;
 pub use identity::*;
@@ -116,15 +118,14 @@ impl NostrRegistry {
         subscriptions.push(
             // Observe the identity entity
             cx.observe(&identity, |this, state, cx| {
-                let identity = state.read(cx);
-
-                if identity.has_public_key() {
-                    match identity.relay_list_state() {
+                if state.read(cx).has_public_key() {
+                    match state.read(cx).relay_list_state() {
                         RelayState::Initial => {
                             this.get_relay_list(cx);
                         }
-                        RelayState::Set => match identity.messaging_relays_state() {
+                        RelayState::Set => match state.read(cx).messaging_relays_state() {
                             RelayState::Initial => {
+                                this.get_profile(cx);
                                 this.get_messaging_relays(cx);
                             }
                             RelayState::Set => {
@@ -134,30 +135,6 @@ impl NostrRegistry {
                         },
                         _ => {}
                     }
-                }
-            }),
-        );
-
-        tasks.push(
-            // Establish connection to the bootstrap relays
-            cx.background_spawn({
-                let client = client.clone();
-
-                async move {
-                    // Add bootstrap relay to the relay pool
-                    for url in BOOTSTRAP_RELAYS.into_iter() {
-                        client.add_relay(url).await?;
-                    }
-
-                    // Add search relay to the relay pool
-                    for url in SEARCH_RELAYS.into_iter() {
-                        client.add_relay(url).await?;
-                    }
-
-                    // Connect to all added relays
-                    client.connect().await;
-
-                    Ok(())
                 }
             }),
         );
@@ -208,6 +185,19 @@ impl NostrRegistry {
 
     // Handle nostr notifications
     async fn handle_notifications(client: &Client, tx: &flume::Sender<Event>) -> Result<(), Error> {
+        // Add bootstrap relay to the relay pool
+        for url in BOOTSTRAP_RELAYS.into_iter() {
+            client.add_relay(url).await?;
+        }
+
+        // Add search relay to the relay pool
+        for url in SEARCH_RELAYS.into_iter() {
+            client.add_relay(url).await?;
+        }
+
+        // Connect to all added relays
+        client.connect().await;
+
         let mut notifications = client.notifications();
         let mut processed_events = HashSet::new();
 
@@ -281,7 +271,7 @@ impl NostrRegistry {
 
         // Ensure relay connections
         for relay in write_relays.iter() {
-            client.add_write_relay(*relay).await?;
+            client.add_relay(*relay).await?;
             client.connect_relay(*relay).await?;
         }
 
@@ -347,57 +337,51 @@ impl NostrRegistry {
     }
 
     /// Get a list of write relays for a given public key
-    pub fn write_relays(&self, public_key: &PublicKey, cx: &App) -> Vec<RelayUrl> {
+    pub fn write_relays(&self, public_key: &PublicKey, cx: &App) -> Task<Vec<RelayUrl>> {
         let client = self.client();
         let relays = self.gossip.read(cx).write_relays(public_key);
-        let async_relays = relays.clone();
 
-        // Ensure relay connections
         cx.background_spawn(async move {
-            for url in async_relays.iter() {
-                client.add_write_relay(url).await.ok();
-                client.connect_relay(url).await.ok();
-            }
-        })
-        .detach();
-
-        relays
-    }
-
-    /// Get a list of read relays for a given public key
-    pub fn read_relays(&self, public_key: &PublicKey, cx: &App) -> Vec<RelayUrl> {
-        let client = self.client();
-        let relays = self.gossip.read(cx).read_relays(public_key);
-        let async_relays = relays.clone();
-
-        // Ensure relay connections
-        cx.background_spawn(async move {
-            for url in async_relays.iter() {
-                client.add_read_relay(url).await.ok();
-                client.connect_relay(url).await.ok();
-            }
-        })
-        .detach();
-
-        relays
-    }
-
-    /// Get a list of messaging relays for a given public key
-    pub fn messaging_relays(&self, public_key: &PublicKey, cx: &App) -> Vec<RelayUrl> {
-        let client = self.client();
-        let relays = self.gossip.read(cx).messaging_relays(public_key);
-        let async_relays = relays.clone();
-
-        // Ensure relay connections
-        cx.background_spawn(async move {
-            for url in async_relays.iter() {
+            // Ensure relay connections
+            for url in relays.iter() {
                 client.add_relay(url).await.ok();
                 client.connect_relay(url).await.ok();
             }
-        })
-        .detach();
 
-        relays
+            relays
+        })
+    }
+
+    /// Get a list of read relays for a given public key
+    pub fn read_relays(&self, public_key: &PublicKey, cx: &App) -> Task<Vec<RelayUrl>> {
+        let client = self.client();
+        let relays = self.gossip.read(cx).read_relays(public_key);
+
+        cx.background_spawn(async move {
+            // Ensure relay connections
+            for url in relays.iter() {
+                client.add_relay(url).await.ok();
+                client.connect_relay(url).await.ok();
+            }
+
+            relays
+        })
+    }
+
+    /// Get a list of messaging relays for a given public key
+    pub fn messaging_relays(&self, public_key: &PublicKey, cx: &App) -> Task<Vec<RelayUrl>> {
+        let client = self.client();
+        let relays = self.gossip.read(cx).messaging_relays(public_key);
+
+        cx.background_spawn(async move {
+            // Ensure relay connections
+            for url in relays.iter() {
+                client.add_relay(url).await.ok();
+                client.connect_relay(url).await.ok();
+            }
+
+            relays
+        })
     }
 
     /// Set the signer for the nostr client and verify the public key
@@ -479,9 +463,14 @@ impl NostrRegistry {
                 .await?;
 
             while let Some((_url, res)) = stream.next().await {
-                if let Ok(event) = res {
-                    log::info!("Received relay list event: {event:?}");
-                    return Ok(RelayState::Set);
+                match res {
+                    Ok(event) => {
+                        log::info!("Received relay list event: {event:?}");
+                        return Ok(RelayState::Set);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to receive relay list event: {e}");
+                    }
                 }
             }
 
@@ -507,6 +496,48 @@ impl NostrRegistry {
         }));
     }
 
+    /// Get profile and contact list for current user
+    fn get_profile(&mut self, cx: &mut Context<Self>) {
+        let client = self.client();
+        let public_key = self.identity().read(cx).public_key();
+        let write_relays = self.write_relays(&public_key, cx);
+
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let mut urls = vec![];
+            urls.extend(write_relays.await);
+            urls.extend(
+                BOOTSTRAP_RELAYS
+                    .iter()
+                    .filter_map(|url| RelayUrl::parse(url).ok()),
+            );
+
+            // Construct subscription options
+            let opts = SubscribeAutoCloseOptions::default()
+                .exit_policy(ReqExitPolicy::ExitOnEOSE)
+                .timeout(Some(Duration::from_secs(TIMEOUT)));
+
+            // Filter for metadata
+            let metadata = Filter::new()
+                .kind(Kind::Metadata)
+                .limit(1)
+                .author(public_key);
+
+            // Filter for contact list
+            let contact_list = Filter::new()
+                .kind(Kind::ContactList)
+                .limit(1)
+                .author(public_key);
+
+            client
+                .subscribe_to(urls, vec![metadata, contact_list], Some(opts))
+                .await?;
+
+            Ok(())
+        });
+
+        task.detach();
+    }
+
     /// Get messaging relays for current user
     fn get_messaging_relays(&mut self, cx: &mut Context<Self>) {
         let client = self.client();
@@ -515,19 +546,28 @@ impl NostrRegistry {
         let write_relays = self.write_relays(&public_key, cx);
 
         let task: Task<Result<RelayState, Error>> = cx.background_spawn(async move {
+            let urls = write_relays.await;
+
+            // Construct the filter for inbox relays
             let filter = Filter::new()
                 .kind(Kind::InboxRelays)
                 .author(public_key)
                 .limit(1);
 
+            // Stream events from the write relays
             let mut stream = client
-                .stream_events_from(write_relays, vec![filter], Duration::from_secs(TIMEOUT))
+                .stream_events_from(urls, vec![filter], Duration::from_secs(TIMEOUT))
                 .await?;
 
             while let Some((_url, res)) = stream.next().await {
-                if let Ok(event) = res {
-                    log::info!("Received messaging relays event: {event:?}");
-                    return Ok(RelayState::Set);
+                match res {
+                    Ok(event) => {
+                        log::info!("Received messaging relays event: {event:?}");
+                        return Ok(RelayState::Set);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to get messaging relays: {e}");
+                    }
                 }
             }
 
@@ -560,25 +600,18 @@ impl NostrRegistry {
         let messaging_relays = self.messaging_relays(&public_key, cx);
 
         cx.background_spawn(async move {
+            let urls = messaging_relays.await;
             let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
             let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
             if let Err(e) = client
-                .subscribe_with_id_to(messaging_relays, id, vec![filter], None)
+                .subscribe_with_id_to(urls, id, vec![filter], None)
                 .await
             {
                 log::error!("Failed to subscribe to gift wrap events: {e}");
             }
         })
         .detach();
-    }
-
-    /// Publish an event to author's write relays
-    pub fn publish(&self, event: Event, cx: &App) -> Task<Result<Output<EventId>, Error>> {
-        let client = self.client();
-        let write_relays = self.write_relays(&event.pubkey, cx);
-
-        cx.background_spawn(async move { Ok(client.send_event_to(&write_relays, &event).await?) })
     }
 
     /// Subscribe to event kinds to author's write relays
@@ -596,16 +629,15 @@ impl NostrRegistry {
             .map(|kind| Filter::new().kind(kind).author(author).limit(1))
             .collect();
 
-        // Construct subscription options
-        let opts = SubscribeAutoCloseOptions::default()
-            .timeout(Some(Duration::from_secs(TIMEOUT)))
-            .exit_policy(ReqExitPolicy::ExitOnEOSE);
-
         cx.background_spawn(async move {
-            if let Err(e) = client
-                .subscribe_to(&write_relays, filters, Some(opts))
-                .await
-            {
+            let urls = write_relays.await;
+
+            // Construct subscription options
+            let opts = SubscribeAutoCloseOptions::default()
+                .timeout(Some(Duration::from_secs(TIMEOUT)))
+                .exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+            if let Err(e) = client.subscribe_to(urls, filters, Some(opts)).await {
                 log::error!("Failed to create a subscription: {e}");
             };
         })

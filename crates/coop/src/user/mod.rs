@@ -263,13 +263,14 @@ impl UserProfile {
         let write_relays = nostr.read(cx).write_relays(&public_key, cx);
 
         cx.background_spawn(async move {
+            let urls = write_relays.await;
             let signer = client.signer().await?;
 
             // Sign the new metadata event
             let event = EventBuilder::metadata(&new_metadata).sign(&signer).await?;
 
             // Send event to user's write relayss
-            client.send_event_to(write_relays, &event).await?;
+            client.send_event_to(urls, &event).await?;
 
             // Return the updated profile
             let metadata = Metadata::from_json(&event.content).unwrap_or_default();

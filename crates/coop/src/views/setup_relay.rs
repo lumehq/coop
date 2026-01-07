@@ -164,6 +164,7 @@ impl SetupRelay {
         let relays = self.relays.clone();
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let urls = write_relays.await;
             let signer = client.signer().await?;
 
             let tags: Vec<Tag> = relays
@@ -177,7 +178,7 @@ impl SetupRelay {
                 .await?;
 
             // Set messaging relays
-            client.send_event_to(write_relays, &event).await?;
+            client.send_event_to(urls, &event).await?;
 
             // Connect to messaging relays
             for relay in relays.iter() {
