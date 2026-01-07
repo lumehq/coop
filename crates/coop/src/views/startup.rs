@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::{RenderedProfile, BUNKER_TIMEOUT};
+use common::BUNKER_TIMEOUT;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -266,8 +266,8 @@ impl Render for Startup {
                                 )
                             })
                             .when(!self.loading, |this| {
-                                let avatar = profile.avatar(true);
-                                let name = profile.display_name();
+                                let avatar = profile.avatar();
+                                let name = profile.name();
 
                                 this.child(
                                     h_flex()

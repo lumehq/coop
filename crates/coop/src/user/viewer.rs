@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::{nip05_verify, shorten_pubkey, RenderedProfile};
+use common::{nip05_verify, shorten_pubkey};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, App, AppContext, ClipboardItem, Context, Entity, IntoElement,
@@ -8,8 +8,7 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use nostr_sdk::prelude::*;
-use person::PersonRegistry;
-use settings::AppSettings;
+use person::{Person, PersonRegistry};
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
 use theme::ActiveTheme;
@@ -23,7 +22,7 @@ pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<
 
 #[derive(Debug)]
 pub struct ProfileViewer {
-    profile: Profile,
+    profile: Person,
 
     /// Follow status
     followed: bool,
@@ -134,7 +133,6 @@ impl ProfileViewer {
 
 impl Render for ProfileViewer {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let bech32 = shorten_pubkey(self.profile.public_key(), 16);
         let shared_bech32 = SharedString::from(bech32);
 
@@ -147,14 +145,14 @@ impl Render for ProfileViewer {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(self.profile.avatar(proxy)).size(rems(4.)))
+                    .child(Avatar::new(self.profile.avatar()).size(rems(4.)))
                     .child(
                         v_flex()
                             .child(
                                 div()
                                     .font_semibold()
                                     .line_height(relative(1.25))
-                                    .child(self.profile.display_name()),
+                                    .child(self.profile.name()),
                             )
                             .when_some(self.address(cx), |this, address| {
                                 this.child(

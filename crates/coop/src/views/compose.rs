@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use chat::{ChatRegistry, Room};
-use common::{nip05_profile, RenderedProfile, TextUtils, BOOTSTRAP_RELAYS};
+use common::{nip05_profile, TextUtils, BOOTSTRAP_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, App, AppContext, Context, Entity, InteractiveElement,
@@ -13,7 +13,6 @@ use gpui::{
 use gpui_tokio::Tokio;
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
-use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
 use theme::ActiveTheme;
@@ -359,7 +358,6 @@ impl Compose {
     }
 
     fn list_items(&self, range: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement> {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let persons = PersonRegistry::global(cx);
         let mut items = Vec::with_capacity(self.contacts.read(cx).len());
 
@@ -383,8 +381,8 @@ impl Compose {
                         h_flex()
                             .gap_1p5()
                             .text_sm()
-                            .child(Avatar::new(profile.avatar(proxy)).size(rems(1.75)))
-                            .child(profile.display_name()),
+                            .child(Avatar::new(profile.avatar()).size(rems(1.75)))
+                            .child(profile.name()),
                     )
                     .when(contact.selected, |this| {
                         this.child(

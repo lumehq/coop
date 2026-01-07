@@ -10,6 +10,7 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use nostr_sdk::prelude::*;
+use person::Person;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
@@ -233,7 +234,7 @@ impl UserProfile {
         .detach();
     }
 
-    pub fn set_metadata(&mut self, cx: &mut Context<Self>) -> Task<Result<Profile, Error>> {
+    pub fn set_metadata(&mut self, cx: &mut Context<Self>) -> Task<Result<Person, Error>> {
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
         let bio = self.bio_input.read(cx).value().to_string();
@@ -274,7 +275,7 @@ impl UserProfile {
 
             // Return the updated profile
             let metadata = Metadata::from_json(&event.content).unwrap_or_default();
-            let profile = Profile::new(event.pubkey, metadata);
+            let profile = Person::new(event.pubkey, metadata);
 
             Ok(profile)
         })

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use auto_update::{AutoUpdateStatus, AutoUpdater};
 use chat::{ChatEvent, ChatRegistry};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
-use common::{RenderedProfile, DEFAULT_SIDEBAR_WIDTH};
+use common::DEFAULT_SIDEBAR_WIDTH;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, relative, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
@@ -14,7 +14,6 @@ use key_store::{Credential, KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use person::PersonRegistry;
 use relay_auth::RelayAuth;
-use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
 use theme::{ActiveTheme, Theme, ThemeMode, ThemeRegistry};
@@ -257,9 +256,9 @@ impl ChatSpace {
 
                                 this.update_in(cx, |_, window, cx| {
                                     match result {
-                                        Ok(profile) => {
+                                        Ok(person) => {
                                             persons.update(cx, |this, cx| {
-                                                this.insert(profile, cx);
+                                                this.insert(person, cx);
                                                 // Close the edit profile modal
                                                 window.close_all_modals(cx);
                                             });
@@ -476,7 +475,6 @@ impl ChatSpace {
     }
 
     fn titlebar_right(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let auto_update = AutoUpdater::global(cx);
 
         let relay_auth = RelayAuth::global(cx);
@@ -562,9 +560,9 @@ impl ChatSpace {
                         .reverse()
                         .transparent()
                         .icon(IconName::CaretDown)
-                        .child(Avatar::new(profile.avatar(proxy)).size(rems(1.45)))
+                        .child(Avatar::new(profile.avatar()).size(rems(1.45)))
                         .popup_menu(move |this, _window, _cx| {
-                            this.label(profile.display_name())
+                            this.label(profile.name())
                                 .menu_with_icon(
                                     "Profile",
                                     IconName::EmojiFill,

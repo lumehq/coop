@@ -4,11 +4,11 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use anyhow::Error;
-use common::{EventUtils, RenderedProfile};
+use common::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use person::PersonRegistry;
+use person::{Person, PersonRegistry};
 use state::{tracker, NostrRegistry};
 
 use crate::NewMessage;
@@ -264,9 +264,9 @@ impl Room {
     }
 
     /// Gets the display image for the room
-    pub fn display_image(&self, proxy: bool, cx: &App) -> SharedString {
+    pub fn display_image(&self, cx: &App) -> SharedString {
         if !self.is_group() {
-            self.display_member(cx).avatar(proxy)
+            self.display_member(cx).avatar()
         } else {
             SharedString::from("brand/group.png")
         }
@@ -275,7 +275,7 @@ impl Room {
     /// Get a member to represent the room
     ///
     /// Display member is always different from the current user.
-    pub fn display_member(&self, cx: &App) -> Profile {
+    pub fn display_member(&self, cx: &App) -> Person {
         let persons = PersonRegistry::global(cx);
         let nostr = NostrRegistry::global(cx);
         let public_key = nostr.read(cx).identity().read(cx).public_key();
@@ -295,7 +295,7 @@ impl Room {
         let persons = PersonRegistry::global(cx);
 
         if self.is_group() {
-            let profiles: Vec<Profile> = self
+            let profiles: Vec<Person> = self
                 .members
                 .iter()
                 .map(|public_key| persons.read(cx).get(public_key, cx))
@@ -314,7 +314,7 @@ impl Room {
 
             SharedString::from(name)
         } else {
-            self.display_member(cx).display_name()
+            self.display_member(cx).name()
         }
     }
 

@@ -528,8 +528,18 @@ impl NostrRegistry {
                 .limit(1)
                 .author(public_key);
 
+            // Filter for encryption keys announcement
+            let encryption_keys = Filter::new()
+                .kind(Kind::Custom(10044))
+                .limit(1)
+                .author(public_key);
+
             client
-                .subscribe_to(urls, vec![metadata, contact_list], Some(opts))
+                .subscribe_to(
+                    urls,
+                    vec![metadata, contact_list, encryption_keys],
+                    Some(opts),
+                )
                 .await?;
 
             Ok(())

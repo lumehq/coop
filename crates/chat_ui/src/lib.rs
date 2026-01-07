@@ -3,7 +3,7 @@ use std::time::Duration;
 
 pub use actions::*;
 use chat::{Message, RenderedMessage, Room, RoomEvent, RoomKind, SendReport};
-use common::{nip96_upload, RenderedProfile, RenderedTimestamp};
+use common::{nip96_upload, RenderedTimestamp};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, AnyElement, App, AppContext,
@@ -16,7 +16,7 @@ use gpui_tokio::Tokio;
 use indexset::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use person::PersonRegistry;
+use person::{Person, PersonRegistry};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
@@ -506,7 +506,7 @@ impl ChatPanel {
         });
     }
 
-    fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Profile {
+    fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Person {
         let persons = PersonRegistry::global(cx);
         persons.read(cx).get(public_key, cx)
     }
@@ -632,7 +632,7 @@ impl ChatPanel {
                         this.child(
                             div()
                                 .id(SharedString::from(format!("{ix}-avatar")))
-                                .child(Avatar::new(author.avatar(proxy)).size(rems(2.)))
+                                .child(Avatar::new(author.avatar()).size(rems(2.)))
                                 .context_menu(move |this, _window, _cx| {
                                     let view = Box::new(OpenPublicKey(public_key));
                                     let copy = Box::new(CopyPublicKey(public_key));
@@ -657,7 +657,7 @@ impl ChatPanel {
                                         div()
                                             .font_semibold()
                                             .text_color(cx.theme().text)
-                                            .child(author.display_name()),
+                                            .child(author.name()),
                                     )
                                     .child(message.created_at.to_human_time())
                                     .when_some(is_sent_success, |this, status| {
@@ -714,7 +714,7 @@ impl ChatPanel {
                     .child(
                         div()
                             .text_color(cx.theme().text_accent)
-                            .child(author.display_name()),
+                            .child(author.name()),
                     )
                     .child(
                         div()
@@ -796,8 +796,8 @@ impl ChatPanel {
     fn render_report(report: &SendReport, cx: &App) -> impl IntoElement {
         let persons = PersonRegistry::global(cx);
         let profile = persons.read(cx).get(&report.receiver, cx);
-        let name = profile.display_name();
-        let avatar = profile.avatar(true);
+        let name = profile.name();
+        let avatar = profile.avatar();
 
         v_flex()
             .gap_2()
@@ -1080,7 +1080,7 @@ impl ChatPanel {
                                 .child(
                                     div()
                                         .text_color(cx.theme().text_accent)
-                                        .child(profile.display_name()),
+                                        .child(profile.name()),
                                 ),
                         )
                         .child(
@@ -1134,7 +1134,7 @@ impl Panel for ChatPanel {
             .read_with(cx, |this, cx| {
                 let proxy = AppSettings::get_proxy_user_avatars(cx);
                 let label = this.display_name(cx);
-                let url = this.display_image(proxy, cx);
+                let url = this.display_image(cx);
 
                 h_flex()
                     .gap_1p5()
