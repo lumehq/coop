@@ -1,6 +1,6 @@
-use nostr_sdk::prelude::*;
+use std::sync::Arc;
 
-use crate::Announcement;
+use nostr_sdk::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RelayState {
@@ -16,13 +16,15 @@ impl RelayState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Identity {
     /// The public key of the account
-    public_key: Option<PublicKey>,
+    pub public_key: Option<PublicKey>,
 
-    /// Encryption key announcement
-    announcement: Option<Announcement>,
+    /// Decoupled encryption key
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    dekey: Option<Arc<dyn NostrSigner>>,
 
     /// Status of the current user NIP-65 relays
     relay_list: RelayState,
@@ -41,7 +43,7 @@ impl Identity {
     pub fn new() -> Self {
         Self {
             public_key: None,
-            announcement: None,
+            dekey: None,
             relay_list: RelayState::default(),
             messaging_relays: RelayState::default(),
         }
@@ -57,6 +59,7 @@ impl Identity {
         self.relay_list
     }
 
+    /// Sets the state of the NIP-17 relays.
     pub fn set_messaging_relays_state(&mut self, state: RelayState) {
         self.messaging_relays = state;
     }
@@ -64,6 +67,26 @@ impl Identity {
     /// Returns the state of the NIP-17 relays.
     pub fn messaging_relays_state(&self) -> RelayState {
         self.messaging_relays
+    }
+
+    /// Returns the decoupled encryption key.
+    pub fn dekey(&self) -> Option<Arc<dyn NostrSigner>> {
+        self.dekey.clone()
+    }
+
+    /// Sets the decoupled encryption key.
+    pub fn set_dekey<S>(&mut self, dekey: S)
+    where
+        S: NostrSigner + 'static,
+    {
+        self.dekey = Some(Arc::new(dekey));
+    }
+
+    /// Force getting the public key of the identity.
+    ///
+    /// Panics if the public key is not set.
+    pub fn public_key(&self) -> PublicKey {
+        self.public_key.unwrap()
     }
 
     /// Returns true if the identity has a public key.
@@ -79,16 +102,5 @@ impl Identity {
     /// Unsets the public key of the identity.
     pub fn unset_public_key(&mut self) {
         self.public_key = None;
-    }
-
-    /// Returns the public key of the identity.
-    pub fn option_public_key(&self) -> Option<PublicKey> {
-        self.public_key
-    }
-
-    /// Returns the public key of the identity.
-    pub fn public_key(&self) -> PublicKey {
-        // This method is safe to unwrap because the public key is always called when the identity is created.
-        self.public_key.unwrap()
     }
 }

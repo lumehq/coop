@@ -541,7 +541,7 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when_some(identity.read(cx).option_public_key(), |this, public_key| {
+            .when_some(identity.read(cx).public_key, |this, public_key| {
                 let persons = PersonRegistry::global(cx);
                 let profile = persons.read(cx).get(&public_key, cx);
 

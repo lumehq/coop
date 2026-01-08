@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use anyhow::Error;
-use common::{config_dir, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
+use anyhow::{anyhow, Context as AnyhowContext, Error};
+use common::{app_name, config_dir, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_lmdb::NostrLmdb;
 use nostr_sdk::prelude::*;
@@ -51,6 +51,11 @@ pub struct NostrRegistry {
 
     /// Gossip implementation
     gossip: Entity<Gossip>,
+
+    /// Device state
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    device_state: Entity<DeviceState>,
 
     /// Tasks for asynchronous operations
     tasks: Vec<Task<Result<(), Error>>>,
@@ -108,6 +113,7 @@ impl NostrRegistry {
 
         // Construct the identity entity
         let identity = cx.new(|_| Identity::default());
+        let device_state = cx.new(|_| DeviceState::default());
 
         // Channel for communication between nostr and gpui
         let (tx, rx) = flume::bounded::<Event>(2048);
@@ -123,16 +129,18 @@ impl NostrRegistry {
                         RelayState::Initial => {
                             this.get_relay_list(cx);
                         }
-                        RelayState::Set => match state.read(cx).messaging_relays_state() {
-                            RelayState::Initial => {
-                                this.get_profile(cx);
-                                this.get_messaging_relays(cx);
-                            }
-                            RelayState::Set => {
-                                this.get_messages(cx);
-                            }
-                            _ => {}
-                        },
+                        RelayState::Set => {
+                            match state.read(cx).messaging_relays_state() {
+                                RelayState::Initial => {
+                                    this.get_profile(cx);
+                                    this.get_messaging_relays(cx);
+                                }
+                                RelayState::Set => {
+                                    this.get_messages(state.read(cx).dekey(), cx);
+                                }
+                                _ => {}
+                            };
+                        }
                         _ => {}
                     }
                 }
@@ -150,7 +158,7 @@ impl NostrRegistry {
 
         tasks.push(
             // Update GPUI states
-            cx.spawn(async move |_this, cx| {
+            cx.spawn(async move |this, cx| {
                 while let Ok(event) = rx.recv_async().await {
                     match event.kind {
                         Kind::RelayList => {
@@ -165,6 +173,11 @@ impl NostrRegistry {
                                 cx.notify();
                             })?;
                         }
+                        Kind::Custom(10044) => {
+                            this.update(cx, |this, cx| {
+                                this.init_dekey(&event, cx);
+                            })?;
+                        }
                         _ => {}
                     }
                 }
@@ -176,6 +189,7 @@ impl NostrRegistry {
         Self {
             client,
             identity,
+            device_state,
             gossip,
             app_keys,
             _subscriptions: subscriptions,
@@ -183,7 +197,7 @@ impl NostrRegistry {
         }
     }
 
-    // Handle nostr notifications
+    /// Handle nostr notifications
     async fn handle_notifications(client: &Client, tx: &flume::Sender<Event>) -> Result<(), Error> {
         // Add bootstrap relay to the relay pool
         for url in BOOTSTRAP_RELAYS.into_iter() {
@@ -198,6 +212,7 @@ impl NostrRegistry {
         // Connect to all added relays
         client.connect().await;
 
+        // Handle nostr notifications
         let mut notifications = client.notifications();
         let mut processed_events = HashSet::new();
 
@@ -217,13 +232,23 @@ impl NostrRegistry {
                             Kind::RelayList => {
                                 // Automatically get messaging relays for each member when the user opens a room
                                 if subscription_id.as_str().starts_with("room-") {
-                                    Self::get_messaging_relays_by(client, event.as_ref()).await?;
+                                    Self::get_adv_events_by(client, event.as_ref()).await?;
                                 }
 
                                 tx.send_async(event.into_owned()).await?;
                             }
                             Kind::InboxRelays => {
                                 tx.send_async(event.into_owned()).await?;
+                            }
+                            Kind::Custom(10044) => {
+                                if let Ok(signer) = client.signer().await {
+                                    if let Ok(public_key) = signer.get_public_key().await {
+                                        // Only send if the event is from the current user
+                                        if public_key == event.pubkey {
+                                            tx.send_async(event.into_owned()).await?;
+                                        }
+                                    }
+                                }
                             }
                             _ => {}
                         }
@@ -251,8 +276,8 @@ impl NostrRegistry {
         Ok(())
     }
 
-    /// Automatically get messaging relays from a received relay list
-    async fn get_messaging_relays_by(client: &Client, event: &Event) -> Result<(), Error> {
+    /// Automatically get messaging relays and encryption announcement from a received relay list
+    async fn get_adv_events_by(client: &Client, event: &Event) -> Result<(), Error> {
         // Subscription options
         let opts = SubscribeAutoCloseOptions::default()
             .timeout(Some(Duration::from_secs(TIMEOUT)))
@@ -276,16 +301,20 @@ impl NostrRegistry {
         }
 
         // Construct filter for inbox relays
-        let filter = Filter::new()
+        let inbox = Filter::new()
             .kind(Kind::InboxRelays)
             .author(event.pubkey)
             .limit(1);
 
-        client
-            .subscribe_to(write_relays, vec![filter], Some(opts))
-            .await?;
+        // Construct filter for encryption announcement
+        let announcement = Filter::new()
+            .kind(Kind::Custom(10044))
+            .author(event.pubkey)
+            .limit(1);
 
-        log::info!("Getting inbox relays for: {}", event.pubkey);
+        client
+            .subscribe_to(write_relays, vec![inbox, announcement], Some(opts))
+            .await?;
 
         Ok(())
     }
@@ -528,18 +557,8 @@ impl NostrRegistry {
                 .limit(1)
                 .author(public_key);
 
-            // Filter for encryption keys announcement
-            let encryption_keys = Filter::new()
-                .kind(Kind::Custom(10044))
-                .limit(1)
-                .author(public_key);
-
             client
-                .subscribe_to(
-                    urls,
-                    vec![metadata, contact_list, encryption_keys],
-                    Some(opts),
-                )
+                .subscribe_to(urls, vec![metadata, contact_list], Some(opts))
                 .await?;
 
             Ok(())
@@ -604,7 +623,10 @@ impl NostrRegistry {
     }
 
     /// Continuously get gift wrap events for the current user in their messaging relays
-    fn get_messages(&mut self, cx: &mut Context<Self>) {
+    fn get_messages<T>(&mut self, dekey: Option<T>, cx: &mut Context<Self>)
+    where
+        T: NostrSigner + 'static,
+    {
         let client = self.client();
         let public_key = self.identity().read(cx).public_key();
         let messaging_relays = self.messaging_relays(&public_key, cx);
@@ -612,43 +634,176 @@ impl NostrRegistry {
         cx.background_spawn(async move {
             let urls = messaging_relays.await;
             let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
-            let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+            let mut filters = vec![];
 
-            if let Err(e) = client
-                .subscribe_with_id_to(urls, id, vec![filter], None)
-                .await
-            {
+            // Construct a filter to get user messages
+            filters.push(Filter::new().kind(Kind::GiftWrap).pubkey(public_key));
+
+            // Construct a filter to get dekey messages if available
+            if let Some(signer) = dekey {
+                if let Ok(pubkey) = signer.get_public_key().await {
+                    filters.push(Filter::new().kind(Kind::GiftWrap).pubkey(pubkey));
+                }
+            }
+
+            if let Err(e) = client.subscribe_with_id_to(urls, id, filters, None).await {
                 log::error!("Failed to subscribe to gift wrap events: {e}");
             }
         })
         .detach();
     }
 
-    /// Subscribe to event kinds to author's write relays
-    pub fn subscribe<I>(&self, kinds: I, author: PublicKey, cx: &App)
+    /// Set the decoupled encryption key for the current user
+    fn set_dekey<T>(&mut self, dekey: T, cx: &mut Context<Self>)
     where
-        I: Into<Vec<Kind>>,
+        T: NostrSigner + 'static,
     {
+        self.identity.update(cx, |this, cx| {
+            this.set_dekey(dekey);
+            cx.notify();
+        });
+        self.device_state.update(cx, |this, cx| {
+            *this = DeviceState::Set;
+            cx.notify();
+        });
+    }
+
+    /// Initialize dekey (decoupled encryption key) for the current user
+    fn init_dekey(&mut self, event: &Event, cx: &mut Context<Self>) {
         let client = self.client();
-        let write_relays = self.write_relays(&author, cx);
+        let announcement = Announcement::from(event);
+        let dekey = announcement.public_key();
 
-        // Construct filters based on event kinds
-        let filters: Vec<Filter> = kinds
-            .into()
-            .into_iter()
-            .map(|kind| Filter::new().kind(kind).author(author).limit(1))
-            .collect();
+        let task: Task<Result<Keys, Error>> = cx.background_spawn(async move {
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
 
-        cx.background_spawn(async move {
-            let urls = write_relays.await;
+            let filter = Filter::new()
+                .identifier("coop:device")
+                .kind(Kind::ApplicationSpecificData)
+                .author(public_key)
+                .limit(1);
 
-            // Construct subscription options
-            let opts = SubscribeAutoCloseOptions::default()
-                .timeout(Some(Duration::from_secs(TIMEOUT)))
-                .exit_policy(ReqExitPolicy::ExitOnEOSE);
+            if let Some(event) = client.database().query(filter).await?.first() {
+                let content = signer.nip44_decrypt(&public_key, &event.content).await?;
+                let secret = SecretKey::parse(&content)?;
+                let keys = Keys::new(secret);
 
-            if let Err(e) = client.subscribe_to(urls, filters, Some(opts)).await {
-                log::error!("Failed to create a subscription: {e}");
+                if keys.public_key() == dekey {
+                    Ok(keys)
+                } else {
+                    Err(anyhow!("Key mismatch"))
+                }
+            } else {
+                Err(anyhow!("Key not found"))
+            }
+        });
+
+        cx.spawn(async move |this, cx| {
+            match task.await {
+                Ok(keys) => {
+                    this.update(cx, |this, cx| {
+                        this.set_dekey(keys, cx);
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    log::warn!("Failed to initialize dekey: {e}");
+                    this.update(cx, |this, cx| {
+                        this.request_dekey(cx);
+                    })
+                    .ok();
+                }
+            };
+        })
+        .detach();
+    }
+
+    /// Request dekey from other device
+    fn request_dekey(&mut self, cx: &mut Context<Self>) {
+        let client = self.client();
+        let device_state = self.device_state.downgrade();
+        let public_key = self.identity().read(cx).public_key();
+        let write_relays = self.write_relays(&public_key, cx);
+
+        let app_keys = self.app_keys().clone();
+        let app_pubkey = app_keys.public_key();
+
+        let task: Task<Result<Option<Keys>, Error>> = cx.background_spawn(async move {
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let filter = Filter::new()
+                .kind(Kind::Custom(4455))
+                .author(public_key)
+                .pubkey(app_pubkey)
+                .limit(1);
+
+            match client.database().query(filter).await?.first_owned() {
+                Some(event) => {
+                    let root_device = event
+                        .tags
+                        .find(TagKind::custom("P"))
+                        .and_then(|tag| tag.content())
+                        .and_then(|content| PublicKey::parse(content).ok())
+                        .context("Invalid event's tags")?;
+
+                    let payload = event.content.as_str();
+                    let decrypted = app_keys.nip44_decrypt(&root_device, payload).await?;
+
+                    let secret = SecretKey::from_hex(&decrypted)?;
+                    let keys = Keys::new(secret);
+
+                    Ok(Some(keys))
+                }
+                None => {
+                    let urls = write_relays.await;
+
+                    // Construct an event for device key request
+                    let event = EventBuilder::new(Kind::Custom(4454), "")
+                        .tags(vec![
+                            Tag::client(app_name()),
+                            Tag::custom(TagKind::custom("P"), vec![app_pubkey]),
+                        ])
+                        .sign(&signer)
+                        .await?;
+
+                    // Send the event to write relays
+                    client.send_event_to(&urls, &event).await?;
+
+                    // Construct a filter to get the approval response event
+                    let filter = Filter::new()
+                        .kind(Kind::Custom(4455))
+                        .author(public_key)
+                        .since(Timestamp::now());
+
+                    // Subscribe to the approval response event
+                    client.subscribe_to(&urls, vec![filter], None).await?;
+
+                    Ok(None)
+                }
+            }
+        });
+
+        cx.spawn(async move |this, cx| {
+            match task.await {
+                Ok(Some(keys)) => {
+                    this.update(cx, |this, cx| {
+                        this.set_dekey(keys, cx);
+                    })
+                    .ok();
+                }
+                Ok(None) => {
+                    device_state
+                        .update(cx, |this, cx| {
+                            *this = DeviceState::Requesting;
+                            cx.notify();
+                        })
+                        .ok();
+                }
+                Err(e) => {
+                    log::error!("Failed to request the encryption key: {e}");
+                }
             };
         })
         .detach();

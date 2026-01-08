@@ -9,7 +9,7 @@ use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_sdk::prelude::*;
 pub use person::*;
 use smallvec::{smallvec, SmallVec};
-use state::{NostrRegistry, TIMEOUT};
+use state::{Announcement, NostrRegistry, TIMEOUT};
 
 mod person;
 
@@ -20,6 +20,12 @@ pub fn init(cx: &mut App) {
 struct GlobalPersonRegistry(Entity<PersonRegistry>);
 
 impl Global for GlobalPersonRegistry {}
+
+#[derive(Debug, Clone)]
+enum Dispatch {
+    Person(Box<Person>),
+    Announcement(Box<Event>),
+}
 
 /// Person Registry
 #[derive(Debug)]
@@ -54,7 +60,7 @@ impl PersonRegistry {
         let client = nostr.read(cx).client();
 
         // Channel for communication between nostr and gpui
-        let (tx, rx) = flume::bounded::<Person>(100);
+        let (tx, rx) = flume::bounded::<Dispatch>(100);
         let (mta_tx, mta_rx) = flume::bounded::<PublicKey>(100);
 
         let mut tasks = smallvec![];
@@ -84,9 +90,16 @@ impl PersonRegistry {
         tasks.push(
             // Update GPUI state
             cx.spawn(async move |this, cx| {
-                while let Ok(person) = rx.recv_async().await {
+                while let Ok(event) = rx.recv_async().await {
                     this.update(cx, |this, cx| {
-                        this.insert(person, cx);
+                        match event {
+                            Dispatch::Person(person) => {
+                                this.insert(*person, cx);
+                            }
+                            Dispatch::Announcement(event) => {
+                                this.set_announcement(&event, cx);
+                            }
+                        };
                     })
                     .ok();
                 }
@@ -124,7 +137,7 @@ impl PersonRegistry {
     }
 
     /// Handle nostr notifications
-    async fn handle_notifications(client: &Client, tx: &flume::Sender<Person>) {
+    async fn handle_notifications(client: &Client, tx: &flume::Sender<Dispatch>) {
         let mut notifications = client.notifications();
         let mut processed_events = HashSet::new();
 
@@ -144,12 +157,21 @@ impl PersonRegistry {
                     Kind::Metadata => {
                         let metadata = Metadata::from_json(&event.content).unwrap_or_default();
                         let person = Person::new(event.pubkey, metadata);
+                        let val = Box::new(person);
 
-                        tx.send_async(person).await.ok();
+                        // Send
+                        tx.send_async(Dispatch::Person(val)).await.ok();
+                    }
+                    Kind::Custom(10044) => {
+                        let val = Box::new(event.into_owned());
+
+                        // Send
+                        tx.send_async(Dispatch::Announcement(val)).await.ok();
                     }
                     Kind::ContactList => {
                         let public_keys = event.extract_public_keys();
 
+                        // Get metadata for all public keys
                         Self::get_metadata(client, public_keys).await.ok();
                     }
                     _ => {}
@@ -230,6 +252,18 @@ impl PersonRegistry {
         }
 
         Ok(persons)
+    }
+
+    /// Set profile encryption keys announcement
+    fn set_announcement(&mut self, event: &Event, cx: &mut App) {
+        if let Some(person) = self.persons.get(&event.pubkey) {
+            let announcement = Announcement::from(event);
+
+            person.update(cx, |person, cx| {
+                person.set_announcement(announcement);
+                cx.notify();
+            });
+        }
     }
 
     /// Insert batch of persons

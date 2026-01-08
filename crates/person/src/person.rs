@@ -8,8 +8,13 @@ use state::Announcement;
 /// Person
 #[derive(Debug, Clone)]
 pub struct Person {
+    /// Public Key
     public_key: PublicKey,
+
+    /// Metadata (profile)
     metadata: Metadata,
+
+    /// Dekey (NIP-4e) announcement
     announcement: Option<Announcement>,
 }
 
@@ -67,6 +72,12 @@ impl Person {
     /// Get profile encryption keys announcement
     pub fn announcement(&self) -> Option<Announcement> {
         self.announcement.clone()
+    }
+
+    /// Set profile encryption keys announcement
+    pub fn set_announcement(&mut self, announcement: Announcement) {
+        self.announcement = Some(announcement);
+        log::info!("Updated announcement for: {}", self.public_key());
     }
 
     /// Get profile avatar

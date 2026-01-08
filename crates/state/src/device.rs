@@ -1,10 +1,21 @@
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum DeviceState {
+    #[default]
+    Initial,
+    Requesting,
+    Set,
+}
+
+/// Announcement
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Announcement {
-    id: EventId,
+    /// The public key of the device that created this announcement.
     public_key: PublicKey,
+
+    /// The name of the device that created this announcement.
     client_name: Option<String>,
 }
 
@@ -24,27 +35,24 @@ impl From<&Event> for Announcement {
             .and_then(|tag| tag.content())
             .map(|c| c.to_string());
 
-        Self::new(val.id, client_name, public_key)
+        Self::new(public_key, client_name)
     }
 }
 
 impl Announcement {
-    pub fn new(id: EventId, client_name: Option<String>, public_key: PublicKey) -> Self {
+    pub fn new(public_key: PublicKey, client_name: Option<String>) -> Self {
         Self {
-            id,
-            client_name,
             public_key,
+            client_name,
         }
     }
 
-    pub fn id(&self) -> EventId {
-        self.id
-    }
-
+    /// Returns the public key of the device that created this announcement.
     pub fn public_key(&self) -> PublicKey {
         self.public_key
     }
 
+    /// Returns the client name of the device that created this announcement.
     pub fn client_name(&self) -> SharedString {
         self.client_name
             .as_ref()

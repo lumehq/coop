@@ -39,7 +39,6 @@ use crate::text::RenderedText;
 
 mod actions;
 mod emoji;
-mod subject;
 mod text;
 
 pub fn init(room: WeakEntity<Room>, window: &mut Window, cx: &mut App) -> Entity<ChatPanel> {
@@ -601,7 +600,6 @@ impl ChatPanel {
         text: AnyElement,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let hide_avatar = AppSettings::get_hide_user_avatars(cx);
 
         let id = message.id;
@@ -1132,7 +1130,6 @@ impl Panel for ChatPanel {
     fn title(&self, cx: &App) -> AnyElement {
         self.room
             .read_with(cx, |this, cx| {
-                let proxy = AppSettings::get_proxy_user_avatars(cx);
                 let label = this.display_name(cx);
                 let url = this.display_image(cx);
 
