@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context as AnyhowContext, Error};
@@ -51,6 +52,11 @@ pub struct NostrRegistry {
 
     /// Gossip implementation
     gossip: Entity<Gossip>,
+
+    /// Device signer
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    device_signer: Entity<Option<Arc<dyn NostrSigner>>>,
 
     /// Device state
     ///
@@ -113,6 +119,9 @@ impl NostrRegistry {
 
         // Construct the identity entity
         let identity = cx.new(|_| Identity::default());
+
+        // Construct the device signer entity
+        let device_signer = cx.new(|_| None);
         let device_state = cx.new(|_| DeviceState::default());
 
         // Channel for communication between nostr and gpui
@@ -133,10 +142,11 @@ impl NostrRegistry {
                             match state.read(cx).messaging_relays_state() {
                                 RelayState::Initial => {
                                     this.get_profile(cx);
+                                    this.get_announcement(cx);
                                     this.get_messaging_relays(cx);
                                 }
                                 RelayState::Set => {
-                                    this.get_messages(state.read(cx).dekey(), cx);
+                                    this.get_messages(cx);
                                 }
                                 _ => {}
                             };
@@ -158,7 +168,7 @@ impl NostrRegistry {
 
         tasks.push(
             // Update GPUI states
-            cx.spawn(async move |this, cx| {
+            cx.spawn(async move |_this, cx| {
                 while let Ok(event) = rx.recv_async().await {
                     match event.kind {
                         Kind::RelayList => {
@@ -173,11 +183,6 @@ impl NostrRegistry {
                                 cx.notify();
                             })?;
                         }
-                        Kind::Custom(10044) => {
-                            this.update(cx, |this, cx| {
-                                this.init_dekey(&event, cx);
-                            })?;
-                        }
                         _ => {}
                     }
                 }
@@ -188,10 +193,11 @@ impl NostrRegistry {
 
         Self {
             client,
-            identity,
-            device_state,
-            gossip,
             app_keys,
+            identity,
+            gossip,
+            device_signer,
+            device_state,
             _subscriptions: subscriptions,
             tasks,
         }
@@ -239,16 +245,6 @@ impl NostrRegistry {
                             }
                             Kind::InboxRelays => {
                                 tx.send_async(event.into_owned()).await?;
-                            }
-                            Kind::Custom(10044) => {
-                                if let Ok(signer) = client.signer().await {
-                                    if let Ok(public_key) = signer.get_public_key().await {
-                                        // Only send if the event is from the current user
-                                        if public_key == event.pubkey {
-                                            tx.send_async(event.into_owned()).await?;
-                                        }
-                                    }
-                                }
                             }
                             _ => {}
                         }
@@ -354,6 +350,11 @@ impl NostrRegistry {
     /// Get current identity
     pub fn identity(&self) -> Entity<Identity> {
         self.identity.clone()
+    }
+
+    /// Get current device signer
+    pub fn device_signer(&self) -> Entity<Option<Arc<dyn NostrSigner>>> {
+        self.device_signer.clone()
     }
 
     /// Get a relay hint (messaging relay) for a given public key
@@ -567,6 +568,58 @@ impl NostrRegistry {
         task.detach();
     }
 
+    /// Get device announcement for current user
+    fn get_announcement(&mut self, cx: &mut Context<Self>) {
+        let client = self.client();
+        let public_key = self.identity().read(cx).public_key();
+        let write_relays = self.write_relays(&public_key, cx);
+
+        let task: Task<Result<Event, Error>> = cx.background_spawn(async move {
+            let urls = write_relays.await;
+
+            // Construct the filter for the device announcement event
+            let filter = Filter::new()
+                .kind(Kind::Custom(10044))
+                .author(public_key)
+                .limit(1);
+
+            let mut stream = client
+                .stream_events_from(&urls, vec![filter], Duration::from_secs(TIMEOUT))
+                .await?;
+
+            while let Some((_url, res)) = stream.next().await {
+                match res {
+                    Ok(event) => {
+                        log::info!("Received device announcement event: {event:?}");
+                        return Ok(event);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to receive device announcement event: {e}");
+                    }
+                }
+            }
+
+            Err(anyhow!("Device announcement not found"))
+        });
+
+        self.tasks.push(cx.spawn(async move |this, cx| {
+            match task.await {
+                Ok(event) => {
+                    this.update(cx, |this, cx| {
+                        this.init_device_signer(&event, cx);
+                    })?;
+                }
+                Err(_) => {
+                    this.update(cx, |this, cx| {
+                        this.announce_device(cx);
+                    })?;
+                }
+            }
+
+            Ok(())
+        }));
+    }
+
     /// Get messaging relays for current user
     fn get_messaging_relays(&mut self, cx: &mut Context<Self>) {
         let client = self.client();
@@ -623,11 +676,9 @@ impl NostrRegistry {
     }
 
     /// Continuously get gift wrap events for the current user in their messaging relays
-    fn get_messages<T>(&mut self, dekey: Option<T>, cx: &mut Context<Self>)
-    where
-        T: NostrSigner + 'static,
-    {
+    fn get_messages(&mut self, cx: &mut Context<Self>) {
         let client = self.client();
+        let device_signer = self.device_signer().read(cx).clone();
         let public_key = self.identity().read(cx).public_key();
         let messaging_relays = self.messaging_relays(&public_key, cx);
 
@@ -640,7 +691,7 @@ impl NostrRegistry {
             filters.push(Filter::new().kind(Kind::GiftWrap).pubkey(public_key));
 
             // Construct a filter to get dekey messages if available
-            if let Some(signer) = dekey {
+            if let Some(signer) = device_signer.as_ref() {
                 if let Ok(pubkey) = signer.get_public_key().await {
                     filters.push(Filter::new().kind(Kind::GiftWrap).pubkey(pubkey));
                 }
@@ -654,12 +705,12 @@ impl NostrRegistry {
     }
 
     /// Set the decoupled encryption key for the current user
-    fn set_dekey<T>(&mut self, dekey: T, cx: &mut Context<Self>)
+    fn set_device_signer<S>(&mut self, signer: S, cx: &mut Context<Self>)
     where
-        T: NostrSigner + 'static,
+        S: NostrSigner + 'static,
     {
-        self.identity.update(cx, |this, cx| {
-            this.set_dekey(dekey);
+        self.device_signer.update(cx, |this, cx| {
+            *this = Some(Arc::new(signer));
             cx.notify();
         });
         self.device_state.update(cx, |this, cx| {
@@ -668,11 +719,65 @@ impl NostrRegistry {
         });
     }
 
-    /// Initialize dekey (decoupled encryption key) for the current user
-    fn init_dekey(&mut self, event: &Event, cx: &mut Context<Self>) {
+    /// Create a new device signer and announce it
+    fn announce_device(&mut self, cx: &mut Context<Self>) {
+        let client = self.client();
+        let public_key = self.identity().read(cx).public_key();
+        let write_relays = self.write_relays(&public_key, cx);
+
+        let keys = Keys::generate();
+        let secret = keys.secret_key().to_secret_hex();
+        let n = keys.public_key();
+
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let signer = client.signer().await?;
+            let urls = write_relays.await;
+
+            // Construct an announcement event
+            let event = EventBuilder::new(Kind::Custom(10044), "")
+                .tags(vec![
+                    Tag::custom(TagKind::custom("n"), vec![n]),
+                    Tag::client(app_name()),
+                ])
+                .sign(&signer)
+                .await?;
+
+            // Publish announcement
+            client.send_event_to(&urls, &event).await?;
+
+            // Encrypt the secret key
+            let encrypted = signer.nip44_encrypt(&public_key, &secret).await?;
+
+            // Construct a storage event
+            let event = EventBuilder::new(Kind::ApplicationSpecificData, encrypted)
+                .tag(Tag::identifier("coop:device"))
+                .sign(&signer)
+                .await?;
+
+            // Save storage event to database
+            //
+            // Note: never publish to any relays
+            client.database().save_event(&event).await?;
+
+            Ok(())
+        });
+
+        cx.spawn(async move |this, cx| {
+            if task.await.is_ok() {
+                this.update(cx, |this, cx| {
+                    this.set_device_signer(keys, cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// Initialize device signer (decoupled encryption key) for the current user
+    fn init_device_signer(&mut self, event: &Event, cx: &mut Context<Self>) {
         let client = self.client();
         let announcement = Announcement::from(event);
-        let dekey = announcement.public_key();
+        let device_pubkey = announcement.public_key();
 
         let task: Task<Result<Keys, Error>> = cx.background_spawn(async move {
             let signer = client.signer().await?;
@@ -689,7 +794,7 @@ impl NostrRegistry {
                 let secret = SecretKey::parse(&content)?;
                 let keys = Keys::new(secret);
 
-                if keys.public_key() == dekey {
+                if keys.public_key() == device_pubkey {
                     Ok(keys)
                 } else {
                     Err(anyhow!("Key mismatch"))
@@ -703,7 +808,7 @@ impl NostrRegistry {
             match task.await {
                 Ok(keys) => {
                     this.update(cx, |this, cx| {
-                        this.set_dekey(keys, cx);
+                        this.set_device_signer(keys, cx);
                     })
                     .ok();
                 }
@@ -789,7 +894,7 @@ impl NostrRegistry {
             match task.await {
                 Ok(Some(keys)) => {
                     this.update(cx, |this, cx| {
-                        this.set_dekey(keys, cx);
+                        this.set_device_signer(keys, cx);
                     })
                     .ok();
                 }

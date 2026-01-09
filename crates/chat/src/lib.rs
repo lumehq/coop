@@ -10,7 +10,9 @@ use common::EventUtils;
 use flume::Sender;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity};
+use gpui::{
+    App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity,
+};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
@@ -61,8 +63,14 @@ pub struct ChatRegistry {
     /// Loading status of the registry
     loading: bool,
 
+    /// Handle notifications asynchronous task
+    notifications: Option<Task<Result<(), Error>>>,
+
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 3]>,
+    tasks: SmallVec<[Task<()>; 3]>,
+
+    /// Subscriptions
+    _subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl EventEmitter<ChatEvent> for ChatRegistry {}
@@ -82,6 +90,7 @@ impl ChatRegistry {
     fn new(cx: &mut Context<Self>) -> Self {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+        let device_signer = nostr.read(cx).device_signer();
 
         // A flag to indicate if the registry is loading
         let status = Arc::new(AtomicBool::new(true));
@@ -90,15 +99,46 @@ impl ChatRegistry {
         let (tx, rx) = flume::bounded::<NostrEvent>(2048);
 
         let mut tasks = smallvec![];
+        let mut subscriptions = smallvec![];
 
-        tasks.push(
-            // Handle nostr notifications
-            cx.background_spawn({
-                let client = client.clone();
-                let status = Arc::clone(&status);
+        let notifications =
+            Some(
+                cx.background_spawn({
+                    let client = client.clone();
+                    let device_signer = device_signer.read(cx).clone();
+
+                    let loading = Arc::clone(&status);
+                    let tx = tx.clone();
+
+                    async move {
+                        Self::handle_notifications(&client, &device_signer, &loading, &tx).await
+                    }
+                }),
+            );
+
+        subscriptions.push(
+            // Observe the device signer state
+            cx.observe(&device_signer, {
+                let loading = Arc::clone(&status);
                 let tx = tx.clone();
 
-                async move { Self::handle_notifications(&client, &status, &tx).await }
+                move |this, state, cx| {
+                    if state.read(cx).is_some() {
+                        this.notifications = Some(cx.background_spawn({
+                            let nostr = NostrRegistry::global(cx);
+                            let client = nostr.read(cx).client();
+                            let device_signer = state.read(cx).clone();
+
+                            let loading = Arc::clone(&loading);
+                            let tx = tx.clone();
+
+                            async move {
+                                Self::handle_notifications(&client, &device_signer, &loading, &tx)
+                                    .await
+                            }
+                        }))
+                    }
+                }
             }),
         );
 
@@ -141,15 +181,18 @@ impl ChatRegistry {
         Self {
             rooms: vec![],
             loading: true,
-            _tasks: tasks,
+            notifications,
+            tasks,
+            _subscriptions: subscriptions,
         }
     }
 
     async fn handle_notifications(
         client: &Client,
+        device_signer: &Option<Arc<dyn NostrSigner>>,
         loading: &Arc<AtomicBool>,
         tx: &Sender<NostrEvent>,
-    ) {
+    ) -> Result<(), Error> {
         let initialized_at = Timestamp::now();
         let subscription_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
 
@@ -175,21 +218,21 @@ impl ChatRegistry {
                     }
 
                     // Extract the rumor from the gift wrap event
-                    match Self::extract_rumor(client, event.as_ref()).await {
+                    match Self::extract_rumor(client, device_signer, event.as_ref()).await {
                         Ok(rumor) => match rumor.created_at >= initialized_at {
                             true => {
+                                // Check if the event is sent by coop
                                 let sent_by_coop = {
                                     let tracker = tracker().read().await;
                                     tracker.is_sent_by_coop(&event.id)
                                 };
-
+                                // No need to emit if sent by coop
+                                // the event is already emitted
                                 if !sent_by_coop {
                                     let new_message = NewMessage::new(event.id, rumor);
                                     let signal = NostrEvent::Message(new_message);
 
-                                    if let Err(e) = tx.send_async(signal).await {
-                                        log::error!("Failed to send signal: {}", e);
-                                    }
+                                    tx.send_async(signal).await.ok();
                                 }
                             }
                             false => {
@@ -197,20 +240,20 @@ impl ChatRegistry {
                             }
                         },
                         Err(e) => {
-                            log::warn!("Failed to unwrap gift wrap event: {}", e);
+                            log::warn!("Failed to unwrap: {e}");
                         }
                     }
                 }
                 RelayMessage::EndOfStoredEvents(id) => {
                     if id.as_ref() == &subscription_id {
-                        if let Err(e) = tx.send_async(NostrEvent::Eose).await {
-                            log::error!("Failed to send signal: {}", e);
-                        }
+                        tx.send_async(NostrEvent::Eose).await.ok();
                     }
                 }
                 _ => {}
             }
         }
+
+        Ok(())
     }
 
     async fn unwrapping_status(client: &Client, status: &Arc<AtomicBool>, tx: &Sender<NostrEvent>) {
@@ -381,7 +424,7 @@ impl ChatRegistry {
     pub fn get_rooms(&mut self, cx: &mut Context<Self>) {
         let task = self.create_get_rooms_task(cx);
 
-        self._tasks.push(
+        self.tasks.push(
             // Run and finished in the background
             cx.spawn(async move |this, cx| {
                 match task.await {
@@ -542,14 +585,18 @@ impl ChatRegistry {
     }
 
     // Unwraps a gift-wrapped event and processes its contents.
-    async fn extract_rumor(client: &Client, gift_wrap: &Event) -> Result<UnsignedEvent, Error> {
+    async fn extract_rumor(
+        client: &Client,
+        device_signer: &Option<Arc<dyn NostrSigner>>,
+        gift_wrap: &Event,
+    ) -> Result<UnsignedEvent, Error> {
         // Try to get cached rumor first
         if let Ok(event) = Self::get_rumor(client, gift_wrap.id).await {
             return Ok(event);
         }
 
         // Try to unwrap with the available signer
-        let unwrapped = Self::try_unwrap(client, gift_wrap).await?;
+        let unwrapped = Self::try_unwrap(client, device_signer, gift_wrap).await?;
         let mut rumor_unsigned = unwrapped.rumor;
 
         // Generate event id for the rumor if it doesn't have one
@@ -562,7 +609,28 @@ impl ChatRegistry {
     }
 
     // Helper method to try unwrapping with different signers
-    async fn try_unwrap(client: &Client, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
+    async fn try_unwrap(
+        client: &Client,
+        device_signer: &Option<Arc<dyn NostrSigner>>,
+        gift_wrap: &Event,
+    ) -> Result<UnwrappedGift, Error> {
+        if let Some(signer) = device_signer.as_ref() {
+            let seal = signer
+                .nip44_decrypt(&gift_wrap.pubkey, &gift_wrap.content)
+                .await?;
+
+            let seal: Event = Event::from_json(seal)?;
+            seal.verify_with_ctx(&SECP256K1)?;
+
+            let rumor = signer.nip44_decrypt(&seal.pubkey, &seal.content).await?;
+            let rumor = UnsignedEvent::from_json(rumor)?;
+
+            return Ok(UnwrappedGift {
+                sender: seal.pubkey,
+                rumor,
+            });
+        }
+
         let signer = client.signer().await?;
         let unwrapped = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
 

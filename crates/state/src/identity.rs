@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use nostr_sdk::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -16,15 +14,11 @@ impl RelayState {
     }
 }
 
+/// Identity
 #[derive(Debug, Clone, Default)]
 pub struct Identity {
     /// The public key of the account
     pub public_key: Option<PublicKey>,
-
-    /// Decoupled encryption key
-    ///
-    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    dekey: Option<Arc<dyn NostrSigner>>,
 
     /// Status of the current user NIP-65 relays
     relay_list: RelayState,
@@ -43,7 +37,6 @@ impl Identity {
     pub fn new() -> Self {
         Self {
             public_key: None,
-            dekey: None,
             relay_list: RelayState::default(),
             messaging_relays: RelayState::default(),
         }
@@ -67,19 +60,6 @@ impl Identity {
     /// Returns the state of the NIP-17 relays.
     pub fn messaging_relays_state(&self) -> RelayState {
         self.messaging_relays
-    }
-
-    /// Returns the decoupled encryption key.
-    pub fn dekey(&self) -> Option<Arc<dyn NostrSigner>> {
-        self.dekey.clone()
-    }
-
-    /// Sets the decoupled encryption key.
-    pub fn set_dekey<S>(&mut self, dekey: S)
-    where
-        S: NostrSigner + 'static,
-    {
-        self.dekey = Some(Arc::new(dekey));
     }
 
     /// Force getting the public key of the identity.
