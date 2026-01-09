@@ -766,6 +766,7 @@ impl NostrRegistry {
             if task.await.is_ok() {
                 this.update(cx, |this, cx| {
                     this.set_device_signer(keys, cx);
+                    this.listen_device_request(cx);
                 })
                 .ok();
             }
@@ -794,11 +795,11 @@ impl NostrRegistry {
                 let secret = SecretKey::parse(&content)?;
                 let keys = Keys::new(secret);
 
-                if keys.public_key() == device_pubkey {
-                    Ok(keys)
-                } else {
-                    Err(anyhow!("Key mismatch"))
-                }
+                if keys.public_key() != device_pubkey {
+                    return Err(anyhow!("Key mismatch"));
+                };
+
+                Ok(keys)
             } else {
                 Err(anyhow!("Key not found"))
             }
@@ -809,13 +810,14 @@ impl NostrRegistry {
                 Ok(keys) => {
                     this.update(cx, |this, cx| {
                         this.set_device_signer(keys, cx);
+                        this.listen_device_request(cx);
                     })
                     .ok();
                 }
                 Err(e) => {
                     log::warn!("Failed to initialize dekey: {e}");
                     this.update(cx, |this, cx| {
-                        this.request_dekey(cx);
+                        this.request_device_keys(cx);
                     })
                     .ok();
                 }
@@ -824,10 +826,57 @@ impl NostrRegistry {
         .detach();
     }
 
-    /// Request dekey from other device
-    fn request_dekey(&mut self, cx: &mut Context<Self>) {
+    /// Listen for device key requests on user's write relays
+    fn listen_device_request(&mut self, cx: &mut Context<Self>) {
         let client = self.client();
-        let device_state = self.device_state.downgrade();
+        let public_key = self.identity().read(cx).public_key();
+        let write_relays = self.write_relays(&public_key, cx);
+
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let urls = write_relays.await;
+
+            // Construct a filter for device key requests
+            let filter = Filter::new()
+                .kind(Kind::Custom(4454))
+                .author(public_key)
+                .since(Timestamp::now());
+
+            // Subscribe to the device key requests on user's write relays
+            client.subscribe_to(&urls, vec![filter], None).await?;
+
+            Ok(())
+        });
+
+        task.detach();
+    }
+
+    /// Listen for device key approvals on user's write relays
+    fn listen_device_approval(&mut self, cx: &mut Context<Self>) {
+        let client = self.client();
+        let public_key = self.identity().read(cx).public_key();
+        let write_relays = self.write_relays(&public_key, cx);
+
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let urls = write_relays.await;
+
+            // Construct a filter for device key requests
+            let filter = Filter::new()
+                .kind(Kind::Custom(4455))
+                .author(public_key)
+                .since(Timestamp::now());
+
+            // Subscribe to the device key requests on user's write relays
+            client.subscribe_to(&urls, vec![filter], None).await?;
+
+            Ok(())
+        });
+
+        task.detach();
+    }
+
+    /// Request encryption keys from other device
+    fn request_device_keys(&mut self, cx: &mut Context<Self>) {
+        let client = self.client();
         let public_key = self.identity().read(cx).public_key();
         let write_relays = self.write_relays(&public_key, cx);
 
@@ -876,15 +925,6 @@ impl NostrRegistry {
                     // Send the event to write relays
                     client.send_event_to(&urls, &event).await?;
 
-                    // Construct a filter to get the approval response event
-                    let filter = Filter::new()
-                        .kind(Kind::Custom(4455))
-                        .author(public_key)
-                        .since(Timestamp::now());
-
-                    // Subscribe to the approval response event
-                    client.subscribe_to(&urls, vec![filter], None).await?;
-
                     Ok(None)
                 }
             }
@@ -899,12 +939,14 @@ impl NostrRegistry {
                     .ok();
                 }
                 Ok(None) => {
-                    device_state
-                        .update(cx, |this, cx| {
+                    this.update(cx, |this, cx| {
+                        this.device_state.update(cx, |this, cx| {
                             *this = DeviceState::Requesting;
                             cx.notify();
-                        })
-                        .ok();
+                        });
+                        this.listen_device_approval(cx);
+                    })
+                    .ok();
                 }
                 Err(e) => {
                     log::error!("Failed to request the encryption key: {e}");
