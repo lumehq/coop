@@ -96,7 +96,7 @@ impl KeyBackend for KeyringProvider {
         url: &'a str,
         cx: &'a AsyncApp,
     ) -> Pin<Box<dyn Future<Output = Result<Option<(String, Vec<u8>)>>> + 'a>> {
-        async move { cx.update(|cx| cx.read_credentials(url))?.await }.boxed_local()
+        async move { cx.update(|cx| cx.read_credentials(url)).await }.boxed_local()
     }
 
     fn write_credentials<'a>(
@@ -107,7 +107,7 @@ impl KeyBackend for KeyringProvider {
         cx: &'a AsyncApp,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>> {
         async move {
-            cx.update(move |cx| cx.write_credentials(url, username, password))?
+            cx.update(move |cx| cx.write_credentials(url, username, password))
                 .await
         }
         .boxed_local()
@@ -118,7 +118,7 @@ impl KeyBackend for KeyringProvider {
         url: &'a str,
         cx: &'a AsyncApp,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>> {
-        async move { cx.update(move |cx| cx.delete_credentials(url))?.await }.boxed_local()
+        async move { cx.update(move |cx| cx.delete_credentials(url)).await }.boxed_local()
     }
 }
 

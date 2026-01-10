@@ -7,10 +7,10 @@ use common::{nip96_upload, RenderedTimestamp};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, AnyElement, App, AppContext,
-    ClipboardItem, Context, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ListAlignment, ListOffset, ListState, MouseButton, ObjectFit,
-    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, WeakEntity, Window,
+    ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, ListAlignment, ListOffset, ListState, MouseButton, ObjectFit, ParentElement,
+    PathPromptOptions, Render, RetainAllImageCache, SharedString, StatefulInteractiveElement,
+    Styled, StyledImage, Subscription, Task, WeakEntity, Window,
 };
 use gpui_tokio::Tokio;
 use indexset::{BTreeMap, BTreeSet};
@@ -446,25 +446,19 @@ impl ChatPanel {
                 Some(url)
             });
 
-            if let Ok(task) = upload {
+            if let Ok(task) = upload.await {
                 this.update(cx, |this, cx| {
                     this.set_uploading(true, cx);
                 })
                 .ok();
 
-                let result = Flatten::flatten(task.await.map_err(|e| e.into()));
-
-                this.update_in(cx, |this, window, cx| {
-                    match result {
-                        Ok(Some(url)) => {
+                this.update_in(cx, |this, _window, cx| {
+                    match task {
+                        Some(url) => {
                             this.add_attachment(url, cx);
                             this.set_uploading(false, cx);
                         }
-                        Ok(None) => {
-                            this.set_uploading(false, cx);
-                        }
-                        Err(e) => {
-                            window.push_notification(Notification::error(e.to_string()), cx);
+                        None => {
                             this.set_uploading(false, cx);
                         }
                     };

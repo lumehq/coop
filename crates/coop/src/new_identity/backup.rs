@@ -3,8 +3,8 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use common::home_dir;
 use gpui::{
-    div, App, AppContext, ClipboardItem, Context, Entity, Flatten, IntoElement, ParentElement,
-    Render, SharedString, Styled, Task, Window,
+    div, App, AppContext, ClipboardItem, Context, Entity, IntoElement, ParentElement, Render,
+    SharedString, Styled, Task, Window,
 };
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -60,7 +60,7 @@ impl Backup {
         let nsec = self.secret_input.read(cx).value().to_string();
 
         cx.spawn_in(window, async move |this, cx| {
-            match Flatten::flatten(path.await.map_err(|e| e.into())) {
+            match path.await {
                 Ok(Ok(Some(path))) => {
                     if let Err(e) = smol::fs::write(&path, nsec).await {
                         this.update_in(cx, |this, window, cx| {
