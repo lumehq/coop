@@ -5,19 +5,19 @@ use nostr_sdk::prelude::*;
 
 pub trait EventUtils {
     fn uniq_id(&self) -> u64;
-    fn all_pubkeys(&self) -> Vec<PublicKey>;
+    fn extract_public_keys(&self) -> Vec<PublicKey>;
 }
 
 impl EventUtils for Event {
     fn uniq_id(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
-        let mut pubkeys: Vec<PublicKey> = self.all_pubkeys();
+        let mut pubkeys: Vec<PublicKey> = self.extract_public_keys();
         pubkeys.sort();
         pubkeys.hash(&mut hasher);
         hasher.finish()
     }
 
-    fn all_pubkeys(&self) -> Vec<PublicKey> {
+    fn extract_public_keys(&self) -> Vec<PublicKey> {
         let mut public_keys: Vec<PublicKey> = self.tags.public_keys().copied().collect();
         public_keys.push(self.pubkey);
 
@@ -45,7 +45,7 @@ impl EventUtils for UnsignedEvent {
         hasher.finish()
     }
 
-    fn all_pubkeys(&self) -> Vec<PublicKey> {
+    fn extract_public_keys(&self) -> Vec<PublicKey> {
         let mut public_keys: Vec<PublicKey> = self.tags.public_keys().copied().collect();
         public_keys.push(self.pubkey);
         public_keys.into_iter().unique().sorted().collect()

@@ -83,8 +83,7 @@ pub fn reset(cx: &mut App) {
 
         cx.update(|cx| {
             cx.restart();
-        })
-        .ok();
+        });
     })
     .detach();
 }

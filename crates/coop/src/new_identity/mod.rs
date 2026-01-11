@@ -1,9 +1,8 @@
 use anyhow::{anyhow, Error};
 use common::{default_nip17_relays, default_nip65_relays, nip96_upload, BOOTSTRAP_RELAYS};
 use gpui::{
-    rems, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten, FocusHandle,
-    Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString, Styled, Task,
-    Window,
+    rems, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    IntoElement, ParentElement, PathPromptOptions, Render, SharedString, Styled, Task, Window,
 };
 use gpui_tokio::Tokio;
 use key_store::{KeyItem, KeyStore};
@@ -221,8 +220,8 @@ impl NewAccount {
         });
 
         let task = Tokio::spawn(cx, async move {
-            match Flatten::flatten(paths.await.map_err(|e| e.into())) {
-                Ok(Some(mut paths)) => {
+            match paths.await {
+                Ok(Ok(Some(mut paths))) => {
                     if let Some(path) = paths.pop() {
                         let file = fs::read(path).await?;
                         let url = nip96_upload(&client, &nip96_server, file).await?;
@@ -232,13 +231,12 @@ impl NewAccount {
                         Err(anyhow!("Path not found"))
                     }
                 }
-                Ok(None) => Err(anyhow!("User cancelled")),
-                Err(e) => Err(anyhow!("File dialog error: {e}")),
+                _ => Err(anyhow!("Error")),
             }
         });
 
         cx.spawn_in(window, async move |this, cx| {
-            let result = Flatten::flatten(task.await.map_err(|e| e.into()));
+            let result = task.await;
 
             this.update_in(cx, |this, window, cx| {
                 match result {

@@ -7,8 +7,7 @@ publish.workspace = true
 [dependencies]
 common = { path = "../common" }
 state = { path = "../state" }
-account = { path = "../account" }
-encryption = { path = "../encryption" }
+device = { path = "../device" }
 person = { path = "../person" }
 settings = { path = "../settings" }
 

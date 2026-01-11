@@ -1,7 +1,6 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use common::RenderedProfile;
 use gpui::{
     AnyElement, App, ElementId, HighlightStyle, InteractiveText, IntoElement, SharedString,
     StyledText, UnderlineStyle, Window,
@@ -254,8 +253,8 @@ fn render_pubkey(
     cx: &App,
 ) {
     let persons = PersonRegistry::global(cx);
-    let profile = persons.read(cx).get_person(&public_key, cx);
-    let display_name = format!("@{}", profile.display_name());
+    let profile = persons.read(cx).get(&public_key, cx);
+    let display_name = format!("@{}", profile.name());
 
     text.replace_range(range.clone(), &display_name);
 

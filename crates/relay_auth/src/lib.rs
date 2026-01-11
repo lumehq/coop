@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -12,7 +12,7 @@ use gpui::{
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::{tracker, NostrRegistry};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::notification::Notification;
@@ -25,10 +25,7 @@ pub fn init(window: &mut Window, cx: &mut App) {
     RelayAuth::set_global(cx.new(|cx| RelayAuth::new(window, cx)), cx);
 }
 
-struct GlobalRelayAuth(Entity<RelayAuth>);
-
-impl Global for GlobalRelayAuth {}
-
+/// Authentication request
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthRequest {
     pub url: RelayUrl,
@@ -50,6 +47,11 @@ impl AuthRequest {
     }
 }
 
+struct GlobalRelayAuth(Entity<RelayAuth>);
+
+impl Global for GlobalRelayAuth {}
+
+// Relay authentication
 #[derive(Debug)]
 pub struct RelayAuth {
     /// Entity for managing auth requests
@@ -77,7 +79,12 @@ impl RelayAuth {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+
+        // Get the current entity
         let entity = cx.entity();
+
+        // Channel for communication between nostr and gpui
+        let (tx, rx) = flume::bounded::<AuthRequest>(100);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -93,36 +100,28 @@ impl RelayAuth {
 
                     if auto_auth && is_authenticated {
                         // Automatically authenticate if the relay is authenticated before
-                        this.response(req.to_owned(), window, cx);
+                        this.response(req, window, cx);
                     } else {
                         // Otherwise open the auth request popup
-                        this.ask_for_approval(req.to_owned(), window, cx);
+                        this.ask_for_approval(req, window, cx);
                     }
                 }
             }),
         );
 
         tasks.push(
-            // Handle notifications
+            // Handle nostr notifications
+            cx.background_spawn(async move { Self::handle_notifications(&client, &tx).await }),
+        );
+
+        tasks.push(
+            // Update GPUI states
             cx.spawn(async move |this, cx| {
-                let mut notifications = client.notifications();
-                let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
-
-                while let Ok(notification) = notifications.recv().await {
-                    let RelayPoolNotification::Message { message, relay_url } = notification else {
-                        // Skip if the notification is not a message
-                        continue;
-                    };
-
-                    if let RelayMessage::Auth { challenge } = message {
-                        if challenges.insert(challenge.clone()) {
-                            this.update(cx, |this, cx| {
-                                this.requests.insert(AuthRequest::new(challenge, relay_url));
-                                cx.notify();
-                            })
-                            .expect("Entity has been released");
-                        };
-                    }
+                while let Ok(request) = rx.recv_async().await {
+                    this.update(cx, |this, cx| {
+                        this.add_request(request, cx);
+                    })
+                    .ok();
                 }
             }),
         );
@@ -132,6 +131,31 @@ impl RelayAuth {
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
+    }
+
+    // Handle nostr notifications
+    async fn handle_notifications(client: &Client, tx: &flume::Sender<AuthRequest>) {
+        let mut notifications = client.notifications();
+
+        while let Ok(notification) = notifications.recv().await {
+            if let RelayPoolNotification::Message {
+                message: RelayMessage::Auth { challenge },
+                relay_url,
+            } = notification
+            {
+                let request = AuthRequest::new(challenge, relay_url);
+
+                if let Err(e) = tx.send_async(request).await {
+                    log::error!("Failed to send auth request: {}", e);
+                }
+            }
+        }
+    }
+
+    /// Add a new authentication request.
+    fn add_request(&mut self, request: AuthRequest, cx: &mut Context<Self>) {
+        self.requests.insert(request);
+        cx.notify();
     }
 
     /// Get the number of pending requests.
@@ -152,7 +176,6 @@ impl RelayAuth {
 
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let tracker = nostr.read(cx).tracker();
 
         let challenge = req.challenge.to_owned();
         let url = req.url.to_owned();
@@ -190,30 +213,14 @@ impl RelayAuth {
                             // Re-subscribe to previous subscription
                             relay.resubscribe().await?;
 
-                            // Get all failed events that need to be resent
-                            let mut tracker = tracker.write().await;
-
-                            let ids: Vec<EventId> = tracker
-                                .resend_queue
-                                .iter()
-                                .filter(|(_, url)| relay_url == *url)
-                                .map(|(id, _)| *id)
-                                .collect();
+                            // Get all pending events that need to be resent
+                            let mut tracker = tracker().write().await;
+                            let ids: Vec<EventId> = tracker.pending_resend(relay_url);
 
                             for id in ids.into_iter() {
-                                if let Some(relay_url) = tracker.resend_queue.remove(&id) {
-                                    if let Some(event) = client.database().event_by_id(&id).await? {
-                                        let event_id = relay.send_event(&event).await?;
-
-                                        let output = Output {
-                                            val: event_id,
-                                            failed: HashMap::new(),
-                                            success: HashSet::from([relay_url]),
-                                        };
-
-                                        tracker.sent_ids.insert(event_id);
-                                        tracker.resent_ids.push(output);
-                                    }
+                                if let Some(event) = client.database().event_by_id(&id).await? {
+                                    let event_id = relay.send_event(&event).await?;
+                                    tracker.sent(event_id);
                                 }
                             }
 
@@ -306,12 +313,13 @@ impl RelayAuth {
                         move |_ev, window, cx| {
                             // Set loading state to true
                             loading.set(true);
+
                             // Process to approve the request
                             entity
                                 .update(cx, |this, cx| {
                                     this.response(req.clone(), window, cx);
                                 })
-                                .expect("Entity has been released");
+                                .ok();
                         }
                     })
             });
@@ -319,9 +327,7 @@ impl RelayAuth {
         // Push the notification to the current window
         window.push_notification(note, cx);
 
-        // Focus the window if it's not active
-        if !window.is_window_hovered() {
-            window.activate_window();
-        }
+        // Bring the window to the front
+        cx.activate(true);
     }
 }

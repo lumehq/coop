@@ -2,6 +2,7 @@ use std::hash::Hash;
 
 use nostr_sdk::prelude::*;
 
+/// New message.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NewMessage {
     pub gift_wrap: EventId,
@@ -14,6 +15,7 @@ impl NewMessage {
     }
 }
 
+/// Message.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Message {
     User(RenderedMessage),
@@ -22,11 +24,17 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn user(user: impl Into<RenderedMessage>) -> Self {
+    pub fn user<I>(user: I) -> Self
+    where
+        I: Into<RenderedMessage>,
+    {
         Self::User(user.into())
     }
 
-    pub fn warning(content: impl Into<String>) -> Self {
+    pub fn warning<I>(content: I) -> Self
+    where
+        I: Into<String>,
+    {
         Self::Warning(content.into(), Timestamp::now())
     }
 
@@ -40,6 +48,18 @@ impl Message {
             Message::Warning(_, ts) => ts,
             Message::System(ts) => ts,
         }
+    }
+}
+
+impl From<&NewMessage> for Message {
+    fn from(val: &NewMessage) -> Self {
+        Self::User(val.into())
+    }
+}
+
+impl From<&UnsignedEvent> for Message {
+    fn from(val: &UnsignedEvent) -> Self {
+        Self::User(val.into())
     }
 }
 
@@ -63,6 +83,7 @@ impl PartialOrd for Message {
     }
 }
 
+/// Rendered message.
 #[derive(Debug, Clone)]
 pub struct RenderedMessage {
     pub id: EventId,
@@ -78,48 +99,53 @@ pub struct RenderedMessage {
     pub replies_to: Vec<EventId>,
 }
 
-impl From<Event> for RenderedMessage {
-    fn from(inner: Event) -> Self {
-        let mentions = extract_mentions(&inner.content);
-        let replies_to = extract_reply_ids(&inner.tags);
+impl From<&Event> for RenderedMessage {
+    fn from(val: &Event) -> Self {
+        let mentions = extract_mentions(&val.content);
+        let replies_to = extract_reply_ids(&val.tags);
 
         Self {
-            id: inner.id,
-            author: inner.pubkey,
-            content: inner.content,
-            created_at: inner.created_at,
+            id: val.id,
+            author: val.pubkey,
+            content: val.content.clone(),
+            created_at: val.created_at,
             mentions,
             replies_to,
         }
     }
 }
 
-impl From<UnsignedEvent> for RenderedMessage {
-    fn from(inner: UnsignedEvent) -> Self {
-        let mentions = extract_mentions(&inner.content);
-        let replies_to = extract_reply_ids(&inner.tags);
+impl From<&UnsignedEvent> for RenderedMessage {
+    fn from(val: &UnsignedEvent) -> Self {
+        let mentions = extract_mentions(&val.content);
+        let replies_to = extract_reply_ids(&val.tags);
 
         Self {
             // Event ID must be known
-            id: inner.id.unwrap(),
-            author: inner.pubkey,
-            content: inner.content,
-            created_at: inner.created_at,
+            id: val.id.unwrap(),
+            author: val.pubkey,
+            content: val.content.clone(),
+            created_at: val.created_at,
             mentions,
             replies_to,
         }
     }
 }
 
-impl From<Box<Event>> for RenderedMessage {
-    fn from(inner: Box<Event>) -> Self {
-        (*inner).into()
-    }
-}
+impl From<&NewMessage> for RenderedMessage {
+    fn from(val: &NewMessage) -> Self {
+        let mentions = extract_mentions(&val.rumor.content);
+        let replies_to = extract_reply_ids(&val.rumor.tags);
 
-impl From<&Box<Event>> for RenderedMessage {
-    fn from(inner: &Box<Event>) -> Self {
-        inner.to_owned().into()
+        Self {
+            // Event ID must be known
+            id: val.rumor.id.unwrap(),
+            author: val.rumor.pubkey,
+            content: val.rumor.content.clone(),
+            created_at: val.rumor.created_at,
+            mentions,
+            replies_to,
+        }
     }
 }
 
@@ -149,6 +175,7 @@ impl Hash for RenderedMessage {
     }
 }
 
+/// Extracts all mentions (public keys) from a content string.
 fn extract_mentions(content: &str) -> Vec<PublicKey> {
     let parser = NostrParser::new();
     let tokens = parser.parse(content);
@@ -165,6 +192,7 @@ fn extract_mentions(content: &str) -> Vec<PublicKey> {
         .collect::<Vec<_>>()
 }
 
+/// Extracts all reply (ids) from the event tags.
 fn extract_reply_ids(inner: &Tags) -> Vec<EventId> {
     let mut replies_to = vec![];
 

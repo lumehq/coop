@@ -182,16 +182,15 @@ impl TabPanel {
 
         // Sync the active state to all panels
         cx.spawn(async move |view, cx| {
-            _ = cx.update(|cx| {
-                _ = view.update(cx, |view, cx| {
-                    if let Some(last_active) = view.panels.get(last_active_ix) {
-                        last_active.set_active(false, cx);
-                    }
-                    if let Some(active) = view.panels.get(view.active_ix) {
-                        active.set_active(true, cx);
-                    }
-                });
-            });
+            view.update(cx, |view, cx| {
+                if let Some(last_active) = view.panels.get(last_active_ix) {
+                    last_active.set_active(false, cx);
+                }
+                if let Some(active) = view.panels.get(view.active_ix) {
+                    active.set_active(true, cx);
+                }
+            })
+            .ok();
         })
         .detach();
 
@@ -923,11 +922,10 @@ impl TabPanel {
         cx.spawn({
             let is_zoomed = self.is_zoomed;
             async move |view, cx| {
-                _ = cx.update(|cx| {
-                    _ = view.update(cx, |view, cx| {
-                        view.set_zoomed(is_zoomed, cx);
-                    });
-                });
+                view.update(cx, |view, cx| {
+                    view.set_zoomed(is_zoomed, cx);
+                })
+                .ok();
             }
         })
         .detach();

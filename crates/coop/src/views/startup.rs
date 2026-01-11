@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::{RenderedProfile, BUNKER_TIMEOUT};
+use common::BUNKER_TIMEOUT;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -29,11 +29,16 @@ pub fn init(cre: Credential, window: &mut Window, cx: &mut App) -> Entity<Startu
 /// Startup
 #[derive(Debug)]
 pub struct Startup {
-    credential: Credential,
-    loading: bool,
-
     name: SharedString,
     focus_handle: FocusHandle,
+
+    /// Local user credentials
+    credential: Credential,
+
+    /// Whether the loadng is in progress
+    loading: bool,
+
+    /// Image cache
     image_cache: Entity<RetainAllImageCache>,
 
     /// Event subscriptions
@@ -164,15 +169,12 @@ impl Startup {
     }
 
     fn login_with_keys(&mut self, secret: SecretKey, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
         let keys = Keys::new(secret);
+        let nostr = NostrRegistry::global(cx);
 
-        // Update the signer
-        cx.background_spawn(async move {
-            client.set_signer(keys).await;
+        nostr.update(cx, |this, cx| {
+            this.set_signer(keys, cx);
         })
-        .detach();
     }
 
     fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
@@ -203,9 +205,7 @@ impl Render for Startup {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         let persons = PersonRegistry::global(cx);
         let bunker = self.credential.secret().starts_with("bunker://");
-        let profile = persons
-            .read(cx)
-            .get_person(&self.credential.public_key(), cx);
+        let profile = persons.read(cx).get(&self.credential.public_key(), cx);
 
         v_flex()
             .image_cache(self.image_cache.clone())
@@ -266,8 +266,8 @@ impl Render for Startup {
                                 )
                             })
                             .when(!self.loading, |this| {
-                                let avatar = profile.avatar(true);
-                                let name = profile.display_name();
+                                let avatar = profile.avatar();
+                                let name = profile.name();
 
                                 this.child(
                                     h_flex()

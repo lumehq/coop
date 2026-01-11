@@ -253,12 +253,10 @@ impl AutoUpdater {
     }
 
     fn check_for_updates(version: Version, cx: &AsyncApp) -> Task<Result<Vec<EventId>, Error>> {
-        let Ok(client) = cx.update(|cx| {
+        let client = cx.update(|cx| {
             let nostr = NostrRegistry::global(cx);
             nostr.read(cx).client()
-        }) else {
-            return Task::ready(Err(anyhow!("Entity has been released")));
-        };
+        });
 
         cx.background_spawn(async move {
             let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
@@ -416,7 +414,7 @@ async fn install_release_macos(
     downloaded_dmg: PathBuf,
     cx: &AsyncApp,
 ) -> Result<(), Error> {
-    let running_app_path = cx.update(|cx| cx.app_path())??;
+    let running_app_path = cx.update(|cx| cx.app_path())?;
     let running_app_filename = running_app_path
         .file_name()
         .with_context(|| format!("invalid running app path {running_app_path:?}"))?;

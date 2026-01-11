@@ -5,11 +5,12 @@ use anyhow::{anyhow, Error};
 use common::{nip96_upload, shorten_pubkey};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, App, AppContext, ClipboardItem, Context, Entity, Flatten, IntoElement, ParentElement,
+    div, img, App, AppContext, ClipboardItem, Context, Entity, IntoElement, ParentElement,
     PathPromptOptions, Render, SharedString, Styled, Task, Window,
 };
 use gpui_tokio::Tokio;
 use nostr_sdk::prelude::*;
+use person::Person;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
@@ -193,8 +194,8 @@ impl UserProfile {
         });
 
         let task = Tokio::spawn(cx, async move {
-            match Flatten::flatten(paths.await.map_err(|e| e.into())) {
-                Ok(Some(mut paths)) => {
+            match paths.await {
+                Ok(Ok(Some(mut paths))) => {
                     if let Some(path) = paths.pop() {
                         let file = fs::read(path).await?;
                         let url = nip96_upload(&client, &nip96_server, file).await?;
@@ -204,13 +205,12 @@ impl UserProfile {
                         Err(anyhow!("Path not found"))
                     }
                 }
-                Ok(None) => Err(anyhow!("User cancelled")),
-                Err(e) => Err(anyhow!("File dialog error: {e}")),
+                _ => Err(anyhow!("Error")),
             }
         });
 
         cx.spawn_in(window, async move |this, cx| {
-            let result = Flatten::flatten(task.await.map_err(|e| e.into()));
+            let result = task.await;
 
             this.update_in(cx, |this, window, cx| {
                 match result {
@@ -233,7 +233,7 @@ impl UserProfile {
         .detach();
     }
 
-    pub fn set_metadata(&mut self, cx: &mut Context<Self>) -> Task<Result<Profile, Error>> {
+    pub fn set_metadata(&mut self, cx: &mut Context<Self>) -> Task<Result<Person, Error>> {
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
         let bio = self.bio_input.read(cx).value().to_string();
@@ -259,27 +259,22 @@ impl UserProfile {
 
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let gossip = nostr.read(cx).gossip();
+        let public_key = nostr.read(cx).identity().read(cx).public_key();
+        let write_relays = nostr.read(cx).write_relays(&public_key, cx);
 
         cx.background_spawn(async move {
+            let urls = write_relays.await;
             let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let gossip = gossip.read().await;
-            let write_relays = gossip.inbox_relays(&public_key);
-
-            // Ensure connections to the write relays
-            gossip.ensure_connections(&client, &write_relays).await;
 
             // Sign the new metadata event
             let event = EventBuilder::metadata(&new_metadata).sign(&signer).await?;
 
             // Send event to user's write relayss
-            client.send_event_to(write_relays, &event).await?;
+            client.send_event_to(urls, &event).await?;
 
             // Return the updated profile
             let metadata = Metadata::from_json(&event.content).unwrap_or_default();
-            let profile = Profile::new(event.pubkey, metadata);
+            let profile = Person::new(event.pubkey, metadata);
 
             Ok(profile)
         })

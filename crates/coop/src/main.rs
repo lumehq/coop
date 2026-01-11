@@ -73,7 +73,6 @@ fn main() {
             // Bring the app to the foreground
             cx.activate(true);
 
-            // Root Entity
             cx.new(|cx| {
                 // Initialize the tokio runtime
                 gpui_tokio::init(cx);
@@ -90,27 +89,27 @@ fn main() {
                 // Initialize the nostr client
                 state::init(cx);
 
-                // Initialize person registry
-                person::init(cx);
+                // Initialize device signer
+                //
+                // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+                device::init(cx);
 
                 // Initialize settings
                 settings::init(cx);
 
-                // Initialize account state
-                account::init(cx);
-
-                // Initialize encryption state
-                encryption::init(cx);
+                // Initialize relay auth registry
+                relay_auth::init(window, cx);
 
                 // Initialize app registry
                 chat::init(cx);
 
-                // Initialize relay auth registry
-                relay_auth::init(window, cx);
+                // Initialize person registry
+                person::init(cx);
 
                 // Initialize auto update
                 auto_update::init(cx);
 
+                // Root Entity
                 Root::new(chatspace::init(window, cx).into(), window, cx)
             })
         })

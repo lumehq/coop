@@ -8,8 +8,7 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use nostr_sdk::prelude::*;
-use person::PersonRegistry;
-use settings::AppSettings;
+use person::{Person, PersonRegistry};
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
 use theme::ActiveTheme;
@@ -23,7 +22,7 @@ pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<
 }
 
 pub struct Screening {
-    profile: Profile,
+    profile: Person,
     verified: bool,
     followed: bool,
     last_active: Option<Timestamp>,
@@ -37,7 +36,7 @@ impl Screening {
         let client = nostr.read(cx).client();
 
         let persons = PersonRegistry::global(cx);
-        let profile = persons.read(cx).get_person(&public_key, cx);
+        let profile = persons.read(cx).get(&public_key, cx);
 
         let mut tasks = smallvec![];
 
@@ -225,7 +224,6 @@ impl Screening {
 
 impl Render for Screening {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let shorten_pubkey = shorten_pubkey(self.profile.public_key(), 8);
         let total_mutuals = self.mutual_contacts.len();
         let last_active = self.last_active.map(|_| true);
@@ -238,12 +236,12 @@ impl Render for Screening {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(self.profile.avatar(proxy)).size(rems(4.)))
+                    .child(Avatar::new(self.profile.avatar()).size(rems(4.)))
                     .child(
                         div()
                             .font_semibold()
                             .line_height(relative(1.25))
-                            .child(self.profile.display_name()),
+                            .child(self.profile.name()),
                     ),
             )
             .child(
