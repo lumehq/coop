@@ -24,7 +24,7 @@ impl From<&Event> for Announcement {
         let public_key = val
             .tags
             .iter()
-            .find(|tag| tag.kind().as_str() == "n" || tag.kind().as_str() == "P")
+            .find(|tag| tag.kind().as_str() == "n")
             .and_then(|tag| tag.content())
             .and_then(|c| PublicKey::parse(c).ok())
             .unwrap_or(val.pubkey);
