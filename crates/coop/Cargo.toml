@@ -33,6 +33,7 @@ title_bar = { path = "../title_bar" }
 theme = { path = "../theme" }
 common = { path = "../common" }
 state = { path = "../state" }
+device = { path = "../device" }
 key_store = { path = "../key_store" }
 chat = { path = "../chat" }
 chat_ui = { path = "../chat_ui" }

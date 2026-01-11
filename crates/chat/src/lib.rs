@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context as AnyhowContext, Error};
 use common::EventUtils;
+use device::DeviceRegistry;
 use flume::Sender;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
@@ -96,7 +97,9 @@ impl ChatRegistry {
     fn new(cx: &mut Context<Self>) -> Self {
         let nostr = NostrRegistry::global(cx);
         let identity = nostr.read(cx).identity();
-        let device_signer = nostr.read(cx).device_signer();
+
+        let device = DeviceRegistry::global(cx);
+        let device_signer = device.read(cx).device_signer.clone();
 
         // A flag to indicate if the registry is loading
         let tracking_flag = Arc::new(AtomicBool::new(true));
@@ -172,7 +175,9 @@ impl ChatRegistry {
     fn handle_notifications(&mut self, cx: &mut Context<Self>) {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let device_signer = nostr.read(cx).device_signer().read(cx).clone();
+
+        let device = DeviceRegistry::global(cx);
+        let device_signer = device.read(cx).signer(cx);
 
         let status = self.tracking_flag.clone();
         let tx = self.sender.clone();

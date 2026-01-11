@@ -1005,6 +1005,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "common",
+ "device",
  "flume",
  "futures",
  "fuzzy-matcher",
@@ -1288,6 +1289,7 @@ dependencies = [
  "chat",
  "chat_ui",
  "common",
+ "device",
  "futures",
  "gpui",
  "gpui_tokio",
@@ -1605,6 +1607,24 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "device"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "common",
+ "flume",
+ "gpui",
+ "itertools 0.13.0",
+ "log",
+ "nostr-sdk",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "smol",
+ "state",
 ]
 
 [[package]]

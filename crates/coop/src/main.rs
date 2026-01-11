@@ -89,6 +89,11 @@ fn main() {
                 // Initialize the nostr client
                 state::init(cx);
 
+                // Initialize device signer
+                //
+                // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+                device::init(cx);
+
                 // Initialize settings
                 settings::init(cx);
 
